@@ -1,0 +1,22 @@
+package com.c2.project_management_system.dto.respone;
+
+import com.c2.project_management_system.statusEnum.ProjectMemberRole;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ProjectMemberResponse {
+
+    private Long id;
+    private Long projectId;
+    private Long userId;
+    private String userFullName;
+    private String userEmail;
+    private ProjectMemberRole role;
+    private LocalDateTime joinedAt;
+}

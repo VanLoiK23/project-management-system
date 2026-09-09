@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./project-management-system-BE  
+      dockerfile: Dockerfile
+    container_name: pms-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}
+    restart: always
+    networks:
+      - pms-network
+
+  frontend:
+    build:
+      context: ./project-management-system-FE
+      dockerfile: Dockerfile
+    container_name: pms-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - pms-network
+
+networks:
+  pms-network:
+    driver: bridge
