@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, Bell, LogOut } from "lucide-react";
 import getInitials from "./get-avatar-name";
+import NotificationDropdown from "./NotificationDropdown";
 
 export default function Header({ user, pageTitle, onLogout }) {
   const [search, setSearch] = useState("");
@@ -46,14 +47,7 @@ export default function Header({ user, pageTitle, onLogout }) {
 
       <div className="flex items-center gap-4 pl-4">
         
-        <button
-          type="button"
-          className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-navy-500/20"
-          aria-label="Thông báo"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
-        </button>
+        <NotificationDropdown />
 
         <div className="relative" ref={userMenuRef}>
           <button

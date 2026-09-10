@@ -170,18 +170,18 @@ export default function Issues() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-6 pb-12">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Vấn đề / Lỗi</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Vấn đề / Lỗi</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Báo cáo, phân công và theo dõi lỗi phát sinh trong dự án.
+            Báo cáo, phân công và theo dõi lỗi phát sinh trong dự án
           </p>
         </div>
         <button
           onClick={() => setShowForm(true)}
           disabled={!projectId}
-          className="flex items-center gap-2 rounded-xl bg-navy-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-navy-900/20 hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           <Plus className="h-4 w-4" />
           Báo cáo lỗi mới

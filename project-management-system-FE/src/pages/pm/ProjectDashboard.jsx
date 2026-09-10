@@ -296,7 +296,7 @@ function UserAutocomplete({ onSelect, excludeIds = [], placeholder }) {
   );
 }
 
-function AddMemberModal({ project, onClose, onAdded, pushToast }) {
+export function AddMemberModal({ project, onClose, onAdded, pushToast }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [role, setRole] = useState("DEVELOPER");
   const [submitting, setSubmitting] = useState(false);

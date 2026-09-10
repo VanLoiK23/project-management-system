@@ -4,8 +4,10 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import com.c2.project_management_system.entity.User;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -58,10 +60,12 @@ public class AuthController {
 	}
 
 	@GetMapping("/account")
-	public ResponseEntity<AccountResponse> findAccount(@AuthenticationPrincipal UserDetails userDetails) {
-		String email = userDetails != null ? userDetails.getUsername() : "";
-
-		return ResponseEntity.ok(authService.findAccount(email));
+	public ResponseEntity<AccountResponse> findAccount(Authentication authentication) {
+		if (authentication == null || !(authentication.getPrincipal() instanceof User)) {
+			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+		}
+		User user = (User) authentication.getPrincipal();
+		return ResponseEntity.ok(authService.findAccount(user.getEmail()));
 	}
 
 	@PostMapping("forgot-password")
