@@ -7,7 +7,6 @@ import java.util.Optional;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -51,13 +50,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 						User user = userOpt.get();
 
 						if (user.getStatus() == AccountStatus.ACTIVE) {
-							List<SimpleGrantedAuthority> authorities = List
-									.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
-							UserDetails userDetails = new org.springframework.security.core.userdetails.User(email, "",
-									authorities);
-
-							UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-									userDetails, null, userDetails.getAuthorities());
+							List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
+							
+							UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(user, null, authorities);
 
 							SecurityContextHolder.getContext().setAuthentication(authentication);
 						} else {
