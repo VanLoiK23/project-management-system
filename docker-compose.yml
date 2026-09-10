@@ -1,6 +1,18 @@
-version: '3.8'
+# version: '3.8'
 
 services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache_PMS
+    ports:
+      - "6380:6379" 
+    volumes:
+      - redis_data:/data
+    restart: always
+    networks:
+      - pms-network
+
   backend:
     build: 
       context: ./project-management-system-BE  
@@ -12,7 +24,14 @@ services:
       - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
       - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}
+      - URL_FE=http://localhost:80/
+      - EMAIL_SEND=${EMAIL_SEND}
+      - EMAIL_APP_PASSWORD=${EMAIL_APP_PASSWORD}
+      - REDIS_HOST=redis_cache_PMS
+      - REDIS_PORT=6379
     restart: always
+    depends_on:
+      - redis
     networks:
       - pms-network
 
@@ -28,6 +47,9 @@ services:
     restart: always
     networks:
       - pms-network
+
+volumes:
+  redis_data:
 
 networks:
   pms-network:

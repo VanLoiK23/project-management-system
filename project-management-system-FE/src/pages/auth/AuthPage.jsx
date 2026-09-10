@@ -84,15 +84,6 @@ export default function AuthPage() {
 
         if (response && response.data) {
           const user = response.data.user;
-          localStorage.setItem("accessToken", response.data.token.accessToken);
-
-          toast.success(`Đăng nhập thành công! Chào mừng ${user.fullName}.`);
-
-          setAuth({
-            isAuthenticated: false,
-            user,
-          });
-
           localStorage.setItem("access_token", response.data.token.accessToken);
 
           toast.success(`Đăng nhập thành công! Chào mừng ${user.fullName}.`);
@@ -101,6 +92,8 @@ export default function AuthPage() {
             isAuthenticated: true,
             user,
           });
+
+          console.log(localStorage.getItem("access_token"));
 
           let targetPath = "/auth";
 
@@ -317,6 +310,9 @@ export default function AuthPage() {
                 <button
                   type="button"
                   className="text-sm font-medium text-navy-600 transition-colors hover:text-navy-700 hover:underline focus:outline-none focus:ring-2 focus:ring-navy-500/20"
+                  onClick={() => {
+                    navigate("/forgot-password");
+                  }}
                 >
                   Quên mật khẩu?
                 </button>

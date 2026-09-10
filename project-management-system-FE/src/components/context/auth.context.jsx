@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect } from "react";
-import instance from "../../utils/axios.customize";
+import axios from "../../utils/axios.customize";
 
 export const AuthContext = createContext({
   auth: {
@@ -22,14 +22,15 @@ export const AuthWrapper = (props) => {
       const token = localStorage.getItem("access_token");
       if (token) {
         try {
-          const res = await instance.get("/auth/account");
+          const res = await axios.get("/auth/account");
           if (res && res.data) {
             setAuth({
               isAuthenticated: true,
-              user: { ...res.data.user, name: res.data.user.fullName },
+              user: { ...res.data, name: res.data.fullName },
             });
           }
         } catch (error) {
+          console.log(error)
           localStorage.removeItem("access_token");
         }
       }

@@ -3,7 +3,10 @@ package com.c2.project_management_system.service.impl;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +26,7 @@ import com.c2.project_management_system.exception.RefreshTokenNotFoundException;
 import com.c2.project_management_system.repository.RefreshTokenRepository;
 import com.c2.project_management_system.repository.UserRepository;
 import com.c2.project_management_system.service.AuthService;
+import com.c2.project_management_system.service.EmailService;
 import com.c2.project_management_system.statusEnum.AccountRole;
 import com.c2.project_management_system.statusEnum.AccountStatus;
 
@@ -35,11 +39,13 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
+	private final RedisTemplate<String, Object> redisTemplate;
 
 	private final UserRepository userRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final JwtProvider jwtProvider;
+	private final EmailService emailService;
 
 	@Override
 	@Transactional
@@ -69,7 +75,7 @@ public class AuthServiceImpl implements AuthService {
 
 		Cookie cookie = new Cookie("refresh_token", null);
 		cookie.setHttpOnly(true);
-		cookie.setSecure(false); 
+		cookie.setSecure(false);
 		cookie.setPath("/");
 		cookie.setMaxAge(0);
 
@@ -79,7 +85,7 @@ public class AuthServiceImpl implements AuthService {
 
 	@Override
 	@Transactional
-	public TokenResponse refreshToken(String rawToken, HttpServletResponse response) { 
+	public String refreshToken(String rawToken) {
 		if (rawToken == null || !jwtProvider.validateToken(rawToken)) {
 			throw new RefreshTokenNotFoundException();
 		}
@@ -99,9 +105,9 @@ public class AuthServiceImpl implements AuthService {
 			throw new AccountLockedException();
 		}
 
-		refreshTokenRepository.delete(storedToken);
+		String accessToken = jwtProvider.generateAccessToken(user);
 
-		return issueTokenPair(user, response);
+		return accessToken;
 	}
 
 	@Override
@@ -129,27 +135,21 @@ public class AuthServiceImpl implements AuthService {
 		String refreshTokenValue = jwtProvider.generateRefreshToken(user);
 
 		long expiryMs = jwtProvider.getRefreshTokenExpirationMs();
-		RefreshToken refreshToken = RefreshToken.builder()
-				.token(refreshTokenValue)
-				.expiryDate(LocalDateTime.now().plus(Duration.ofMillis(expiryMs)))
-				.user(user)
-				.build();
+		RefreshToken refreshToken = RefreshToken.builder().token(refreshTokenValue)
+				.expiryDate(LocalDateTime.now().plus(Duration.ofMillis(expiryMs))).user(user).build();
 
 		refreshTokenRepository.save(refreshToken);
 
 		Cookie cookie = new Cookie("refresh_token", refreshTokenValue);
 		cookie.setHttpOnly(true);
-		cookie.setSecure(false); 
+		cookie.setSecure(false);
 		cookie.setPath("/");
-		cookie.setMaxAge((int) (expiryMs / 1000)); 
-		
+		cookie.setMaxAge((int) (expiryMs / 1000));
+
 		response.addCookie(cookie);
 
-		return TokenResponse.builder()
-				.accessToken(accessToken)
-				.tokenType("Bearer")
-				.expiresIn(jwtProvider.getAccessTokenExpirationMs() / 1000)
-				.build();
+		return TokenResponse.builder().accessToken(accessToken).tokenType("Bearer")
+				.expiresIn(jwtProvider.getAccessTokenExpirationMs() / 1000).build();
 	}
 
 	private Optional<User> findUserByEmailOrUsername(String emailOrUsername) {
@@ -165,8 +165,44 @@ public class AuthServiceImpl implements AuthService {
 	@Override
 	public AccountResponse findAccount(String email) {
 		User user = userRepository.findByEmail(email)
-				.orElseThrow(() -> new InvalidCredentialsException("Email/username hoặc mật khẩu không chính xác"));
+				.orElseThrow(() -> new IllegalArgumentException("User with email:"+email+" not found"));
 
 		return toAccountResponse(user);
 	}
+
+	@Override
+	public boolean generateTokenAndSendMailReset(String email) {
+		userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("Email not found"));
+
+		String resetToken = UUID.randomUUID().toString();
+
+		redisTemplate.opsForValue().set("RESET_" + resetToken, email, 15, TimeUnit.MINUTES);
+
+		return emailService.sendResetEmail(email, resetToken);
+	}
+
+	@Override
+	public boolean resetPassword(String token, String password) {
+		String key = "RESET_" + token;
+
+		String email = (String) redisTemplate.opsForValue().get(key);
+
+		if (email == null || email.isBlank()) {
+			throw new IllegalArgumentException("Token is expired or is incorrect");
+		}
+
+		User userEntity = userRepository.findByEmail(email).orElse(null);
+
+		if (userEntity == null) {
+			throw new IllegalArgumentException("Email not found");
+		}
+		userEntity.setPassword(passwordEncoder.encode(password));
+
+		userRepository.save(userEntity);
+
+		redisTemplate.delete(key);
+
+		return true;
+	}
+
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import instance from "../../utils/axios.customize";
 import { toast } from "react-toastify";
@@ -26,13 +26,13 @@ const ForgotPassword = () => {
     setIsLoading(true);
     try {
       const res = await instance.post("/auth/forgot-password", { email });
-      if (res && res.data) {
+      if (res && res.data.success) {
         toast.success("Yêu cầu đã gửi! Vui lòng kiểm tra email.");
         navigate("/auth");
       }
     } catch (err) {
       console.log(err);
-      toast.error("Email không tồn tại trong hệ thống VKU!");
+      toast.error("Email không tồn tại trong hệ thống quản lý!");
     } finally {
       setIsLoading(false);
     }
@@ -47,11 +47,11 @@ const ForgotPassword = () => {
               <KeyRound className="h-8 w-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              Quên mật khẩu?
+              Khôi phục mật khẩu
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Đừng lo lắng, hãy nhập email @vku.udn.vn của bạn để nhận mã khôi
-              phục tài khoản.
+              Đừng lo lắng, hãy nhập email tài khoản của bạn trên hệ thống Quản
+              lý Dự án để nhận mã khôi phục.
             </p>
           </div>
 
@@ -71,7 +71,7 @@ const ForgotPassword = () => {
                 htmlFor="email"
                 className="pointer-events-none absolute left-11 top-1/2 origin-left -translate-y-1/2 text-muted-foreground transition-all duration-200 peer-focus:left-4 peer-focus:top-2 peer-focus:-translate-y-0 peer-focus:scale-[0.75] peer-focus:text-navy-500 peer-[:not(:placeholder-shown)]:left-4 peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:-translate-y-0 peer-[:not(:placeholder-shown)]:scale-[0.75] peer-[:not(:placeholder-shown)]:text-navy-500"
               >
-                Email (@vku.udn.vn)
+                Email đăng nhập
               </label>
               <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             </div>
@@ -89,7 +89,7 @@ const ForgotPassword = () => {
                 </span>
               ) : (
                 <>
-                  Gửi yêu cầu
+                  Gửi yêu cầu khôi phục
                   <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
                 </>
               )}
@@ -103,7 +103,7 @@ const ForgotPassword = () => {
               className="group flex items-center gap-2 text-sm font-medium text-navy-600 transition-colors hover:text-navy-700 focus:outline-none"
             >
               <ArrowLeft className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-1" />
-              Quay lại đăng nhập
+              Quay lại trang đăng nhập
             </button>
           </div>
         </div>
@@ -127,8 +127,9 @@ const ForgotPassword = () => {
               Bảo mật tài khoản
             </h2>
             <p className="max-w-md text-sm text-navy-100/80">
-              Hệ thống đảm bảo thông tin cá nhân của sinh viên luôn được bảo vệ
-              an toàn 24/7. Không chia sẻ mã khôi phục cho bất kỳ ai.
+              Hệ thống đảm bảo dữ liệu dự án và thông tin cá nhân của người dùng
+              luôn được bảo vệ an toàn 24/7. Vui lòng không chia sẻ mã khôi phục
+              cho bất kỳ ai.
             </p>
           </div>
         </div>

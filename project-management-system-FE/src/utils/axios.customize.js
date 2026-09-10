@@ -52,7 +52,7 @@ instance.interceptors.response.use(
           { withCredentials: true }
         );
 
-        const newAccessToken = res.accessToken;
+        const newAccessToken = res.data.accessToken;
         localStorage.setItem("access_token", newAccessToken);
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 

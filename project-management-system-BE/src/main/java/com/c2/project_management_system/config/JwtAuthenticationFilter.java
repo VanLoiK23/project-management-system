@@ -7,7 +7,7 @@ import java.util.Optional;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -40,7 +40,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		try {
 			String token = resolveToken(request);
 
-			if (StringUtils.hasText(token) && jwtProvider.validateToken(token)) {
+			if (StringUtils.hasText(token) && !token.equals("undefined") && !token.equals("null")
+					&& jwtProvider.validateToken(token)) {
 				String email = jwtProvider.getEmailFromToken(token);
 
 				if (SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -52,10 +53,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 						if (user.getStatus() == AccountStatus.ACTIVE) {
 							List<SimpleGrantedAuthority> authorities = List
 									.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
+							UserDetails userDetails = new org.springframework.security.core.userdetails.User(email, "",
+									authorities);
 
 							UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-									user, null, authorities);
-							authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+									userDetails, null, userDetails.getAuthorities());
 
 							SecurityContextHolder.getContext().setAuthentication(authentication);
 						} else {

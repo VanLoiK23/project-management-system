@@ -27,5 +27,4 @@ public class ProjectUpdateRequest {
 
     @NotNull(message = "Ngày kết thúc không được để trống")
     private LocalDate endDate;
-
 }

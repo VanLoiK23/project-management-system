@@ -8,7 +8,7 @@ import {
   EyeOff,
   ArrowRight,
   ShieldCheck,
-  ArrowLeft
+  ArrowLeft,
 } from "lucide-react";
 
 export default function ResetPassword() {
@@ -39,10 +39,10 @@ export default function ResetPassword() {
 
       const result = await axios.post("/auth/reset-password", {
         token,
-        password
+        password,
       });
 
-      if (result.data.isSuccess) {
+      if (result && result.data.success) {
         toast.success("Đổi mật khẩu thành công!");
         navigate("/auth");
       } else {
@@ -72,9 +72,12 @@ export default function ResetPassword() {
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md ring-1 ring-white/20">
               <ShieldCheck className="h-6 w-6 text-white" />
             </div>
-            <h2 className="mb-2 text-2xl font-bold text-white">Thiết lập lại bảo mật</h2>
+            <h2 className="mb-2 text-2xl font-bold text-white">
+              Thiết lập lại bảo mật
+            </h2>
             <p className="max-w-md text-sm text-navy-100/80">
-              Vui lòng chọn mật khẩu mạnh bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt để bảo vệ tài khoản của bạn.
+              Vui lòng chọn mật khẩu mạnh bao gồm chữ hoa, chữ thường, số và ký
+              tự đặc biệt để bảo vệ tài khoản của bạn.
             </p>
           </div>
         </div>
@@ -117,7 +120,11 @@ export default function ResetPassword() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-navy-500/20"
               >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                {showPassword ? (
+                  <EyeOff className="h-5 w-5" />
+                ) : (
+                  <Eye className="h-5 w-5" />
+                )}
               </button>
             </div>
 
@@ -143,7 +150,11 @@ export default function ResetPassword() {
                 onClick={() => setShowConfirm(!showConfirm)}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-navy-500/20"
               >
-                {showConfirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                {showConfirm ? (
+                  <EyeOff className="h-5 w-5" />
+                ) : (
+                  <Eye className="h-5 w-5" />
+                )}
               </button>
             </div>
 

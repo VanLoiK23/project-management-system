@@ -1,5 +1,7 @@
 package com.c2.project_management_system.controller;
 
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -11,8 +13,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.c2.project_management_system.dto.request.ForgotPasswordRequest;
 import com.c2.project_management_system.dto.request.LoginRequest;
 import com.c2.project_management_system.dto.request.RegisterRequest;
+import com.c2.project_management_system.dto.request.ResetPasswordRequest;
 import com.c2.project_management_system.dto.respone.AccountResponse;
 import com.c2.project_management_system.dto.respone.LoginResponse;
 import com.c2.project_management_system.dto.respone.MessageResponse;
@@ -44,9 +48,8 @@ public class AuthController {
 	}
 
 	@PostMapping("/refresh")
-	public ResponseEntity<TokenResponse> refresh(
-			@CookieValue(name = "refresh_token", required = false) String refreshToken, HttpServletResponse response) {
-		return ResponseEntity.ok(authService.refreshToken(refreshToken, response));
+	public ResponseEntity<?> refresh(@CookieValue(name = "refresh_token", required = false) String refreshToken) {
+		return ResponseEntity.ok(Map.of("accessToken", authService.refreshToken(refreshToken)));
 	}
 
 	@PostMapping("/register")
@@ -56,8 +59,25 @@ public class AuthController {
 
 	@GetMapping("/account")
 	public ResponseEntity<AccountResponse> findAccount(@AuthenticationPrincipal UserDetails userDetails) {
-		String email = userDetails != null && userDetails.getUsername() != null ? userDetails.getUsername() : "";
+		String email = userDetails != null ? userDetails.getUsername() : "";
 
 		return ResponseEntity.ok(authService.findAccount(email));
 	}
+
+	@PostMapping("forgot-password")
+	public ResponseEntity<?> sendEmailForgotPassword(@RequestBody @Valid ForgotPasswordRequest request) {
+
+		boolean success = authService.generateTokenAndSendMailReset(request.getEmail());
+
+		return ResponseEntity.ok(Map.of("success", success));
+	}
+
+	@PostMapping("reset-password")
+	public ResponseEntity<?> resetPassword(@RequestBody @Valid ResetPasswordRequest request) {
+
+		boolean success = authService.resetPassword(request.getToken(), request.getPassword());
+
+		return ResponseEntity.ok(Map.of("success", success));
+	}
+
 }

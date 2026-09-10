@@ -84,6 +84,8 @@ const router = createBrowserRouter([
     ],
   },
 
+  { path: "/projects", element: <>{<ProjectDashboard />}</> }, 
+
   // PUBLIC 
   { path: "/auth", element: <AuthPage /> },
   { path: "/forgot-password", element: <ForgotPassword /> },

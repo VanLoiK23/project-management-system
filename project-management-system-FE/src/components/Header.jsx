@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, Bell, LogOut } from "lucide-react";
+import getInitials from "./get-avatar-name";
 
 export default function Header({ user, pageTitle, onLogout }) {
   const [search, setSearch] = useState("");
@@ -17,15 +18,6 @@ export default function Header({ user, pageTitle, onLogout }) {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showUserMenu]);
-
-  const getInitials = (name) => {
-    if (!name) return "U";
-    const parts = name.trim().split(" ");
-    if (parts.length > 1) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  };
 
   const userName = user?.name || user?.fullName || "Người dùng";
 
