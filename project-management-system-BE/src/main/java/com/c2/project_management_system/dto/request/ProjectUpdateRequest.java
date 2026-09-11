@@ -2,6 +2,8 @@ package com.c2.project_management_system.dto.request;
 
 import java.time.LocalDate;
 
+import com.c2.project_management_system.statusEnum.ProjectStatus;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -27,4 +29,6 @@ public class ProjectUpdateRequest {
 
     @NotNull(message = "Ngày kết thúc không được để trống")
     private LocalDate endDate;
+    
+    private ProjectStatus status;
 }

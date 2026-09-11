@@ -4,8 +4,7 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,7 +19,7 @@ import com.c2.project_management_system.dto.request.ResetPasswordRequest;
 import com.c2.project_management_system.dto.respone.AccountResponse;
 import com.c2.project_management_system.dto.respone.LoginResponse;
 import com.c2.project_management_system.dto.respone.MessageResponse;
-import com.c2.project_management_system.dto.respone.TokenResponse;
+import com.c2.project_management_system.entity.User;
 import com.c2.project_management_system.service.AuthService;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -58,10 +57,10 @@ public class AuthController {
 	}
 
 	@GetMapping("/account")
-	public ResponseEntity<AccountResponse> findAccount(@AuthenticationPrincipal UserDetails userDetails) {
-		String email = userDetails != null ? userDetails.getUsername() : "";
+	public ResponseEntity<AccountResponse> findAccount(Authentication authentication) {
+		User user = currentUser(authentication);
 
-		return ResponseEntity.ok(authService.findAccount(email));
+		return ResponseEntity.ok(authService.findAccount(user.getEmail()));
 	}
 
 	@PostMapping("forgot-password")
@@ -78,6 +77,16 @@ public class AuthController {
 		boolean success = authService.resetPassword(request.getToken(), request.getPassword());
 
 		return ResponseEntity.ok(Map.of("success", success));
+	}
+
+	private User currentUser(Authentication authentication) {
+
+		if (authentication == null || authentication.getPrincipal() == null) {
+
+			throw new IllegalStateException("Không xác định được người dùng hiện tại");
+		}
+
+		return (User) authentication.getPrincipal();
 	}
 
 }

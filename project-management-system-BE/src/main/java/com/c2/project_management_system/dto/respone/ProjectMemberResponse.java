@@ -1,5 +1,6 @@
 package com.c2.project_management_system.dto.respone;
 
+import com.c2.project_management_system.statusEnum.AccountStatus;
 import com.c2.project_management_system.statusEnum.ProjectMemberRole;
 import lombok.*;
 
@@ -17,6 +18,7 @@ public class ProjectMemberResponse {
     private Long userId;
     private String userFullName;
     private String userEmail;
+    private AccountStatus userStatus;
     private ProjectMemberRole role;
     private LocalDateTime joinedAt;
 }
