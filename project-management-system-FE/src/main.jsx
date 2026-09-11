@@ -30,7 +30,7 @@ import TasksPage from "./pages/pm/TasksPage.jsx";
 import AccountManagement from "./pages/admin/AccountManagement.jsx";
 import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
 import MemberProjects from "./pages/members/MemberProjects.jsx";
-
+import Progress from "./pages/pm/ProgressManagement.jsx";
 const router = createBrowserRouter([
   {
     path: "/",
@@ -69,8 +69,9 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <PmDashboard /> }, // Tổng quan
-          { path: "projects", element: <ProjectDashboard /> }, 
+          { path: "projects", element: <ProjectDashboard /> },
           { path: "tasks", element: <TasksPage isPm={true} /> }, // Quản lý Công việc
+          { path: "progress", element: <Progress isPm={true} /> }, // Quản lý Công việc
           { path: "milestones", element: <Milestones /> }, // Lịch trình
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
           { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
@@ -113,5 +114,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <ToastContainer position="top-right" autoClose={3000} />
       <RouterProvider router={router} />
     </AuthWrapper>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
