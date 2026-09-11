@@ -28,7 +28,4 @@ public class ProjectCreateRequest {
 
     @NotNull(message = "Ngày kết thúc không được để trống")
     private LocalDate endDate;
-
-    @Builder.Default
-    private Set<Long> memberIds = new HashSet<>();
 }

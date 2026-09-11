@@ -153,19 +153,18 @@ public class AuthServiceImpl implements AuthService {
 	}
 
 	private Optional<User> findUserByEmailOrUsername(String emailOrUsername) {
-		return userRepository.findByEmail(emailOrUsername).or(() -> userRepository.findByUsername(emailOrUsername));
+		return userRepository.findByEmail(emailOrUsername).or(() -> userRepository.findByFullName(emailOrUsername));
 	}
 
 	private AccountResponse toAccountResponse(User user) {
 		return AccountResponse.builder().id(user.getId()).fullName(user.getFullName()).email(user.getEmail())
-				.username(user.getUsername()).role(user.getRole()).status(user.getStatus())
-				.createdAt(user.getCreatedAt()).build();
+				.role(user.getRole()).status(user.getStatus()).createdAt(user.getCreatedAt()).build();
 	}
 
 	@Override
 	public AccountResponse findAccount(String email) {
 		User user = userRepository.findByEmail(email)
-				.orElseThrow(() -> new IllegalArgumentException("User with email:"+email+" not found"));
+				.orElseThrow(() -> new IllegalArgumentException("User with email:" + email + " not found"));
 
 		return toAccountResponse(user);
 	}

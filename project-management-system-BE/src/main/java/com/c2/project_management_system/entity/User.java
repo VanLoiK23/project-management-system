@@ -49,13 +49,8 @@ public class User {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(unique = true, length = 50)
-    private String username;
-
     @Column(nullable = false)
     private String password;
-
-    private String avatarUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -74,6 +69,7 @@ public class User {
     private LocalDateTime updatedAt;
 
     // Bat buoc: phuc vu co che JWT refresh token
+    @Builder.Default
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "user", orphanRemoval = true)
     private List<RefreshToken> refreshTokens = new ArrayList<>();
 

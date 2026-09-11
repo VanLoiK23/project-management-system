@@ -13,18 +13,18 @@ import {
 
 const roleMenus = {
   ADMIN: [
-    {
-      label: "Tổng quan Hệ thống",
-      icon: LayoutDashboard,
-      path: "/admin/dashboard",
-    },
+    // {
+    //   label: "Tổng quan Hệ thống",
+    //   icon: LayoutDashboard,
+    //   path: "/admin/dashboard",
+    // },
     { label: "Quản lý Người dùng", icon: Users, path: "/admin/users" },
     { label: "Tất cả Dự án", icon: FolderKanban, path: "/admin/projects" },
-    { label: "Phân quyền", icon: ShieldAlert, path: "/admin/roles" },
-    { label: "Cài đặt Hệ thống", icon: Settings, path: "/admin/settings" },
+    // { label: "Phân quyền", icon: ShieldAlert, path: "/admin/roles" },
+    // { label: "Cài đặt Hệ thống", icon: Settings, path: "/admin/settings" },
   ],
   PM: [
-    { label: "Tổng quan", icon: LayoutDashboard, path: "/pm/dashboard" },
+    // { label: "Tổng quan", icon: LayoutDashboard, path: "/pm/dashboard" },
     { label: "Dự án của tôi", icon: FolderKanban, path: "/pm/projects" },
     { label: "Quản lý Công việc", icon: CheckSquare, path: "/pm/tasks" },
     { label: "Lịch trình", icon: CalendarRange, path: "/pm/milestones" },
