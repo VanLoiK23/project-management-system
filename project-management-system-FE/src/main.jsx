@@ -24,7 +24,7 @@ import Milestones from "./pages/pm/Milestones.jsx";
 import Issues from "./pages/pm/Issues.jsx";
 import Documents from "./pages/pm/Documents.jsx";
 import PmDashboard from "./pages/pm/PmDashboard.jsx";
-import PmTeam from "./pages/pm/PmTeam.jsx";
+import PMTeam from "./pages/pm/PMTeam.jsx";
 import ReportsPage from "./pages/pm/ReportsPage.jsx";
 import TasksPage from "./pages/pm/TasksPage.jsx";
 import AccountManagement from "./pages/admin/AccountManagement.jsx";
@@ -74,7 +74,7 @@ const router = createBrowserRouter([
           { path: "milestones", element: <Milestones /> }, // Lịch trình
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
           { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
-          { path: "team", element: <PmTeam /> }, // Thành viên Team
+          { path: "team", element: <PMTeam /> }, // Thành viên Team
           { path: "reports", element: <ReportsPage isPm={true} /> }, // Báo cáo
         ],
       },
@@ -99,8 +99,6 @@ const router = createBrowserRouter([
     ],
   },
 
-  { path: "/projects", element: <>{<MemberProjects />}</> },
-  { path: "/users", element: <>{<AccountManagement />}</> },
   // PUBLIC
   { path: "/auth", element: <AuthPage /> },
   { path: "/forgot-password", element: <ForgotPassword /> },
