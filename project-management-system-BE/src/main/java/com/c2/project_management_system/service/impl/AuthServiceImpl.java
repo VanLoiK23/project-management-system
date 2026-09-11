@@ -39,170 +39,256 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
-	private final RedisTemplate<String, Object> redisTemplate;
 
-	private final UserRepository userRepository;
-	private final RefreshTokenRepository refreshTokenRepository;
-	private final PasswordEncoder passwordEncoder;
-	private final JwtProvider jwtProvider;
-	private final EmailService emailService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
-	@Override
-	@Transactional
-	public LoginResponse login(LoginRequest request, HttpServletResponse response) {
-		User user = findUserByEmailOrUsername(request.getUsernameOrEmail())
-				.orElseThrow(() -> new InvalidCredentialsException("Email/username hoặc mật khẩu không chính xác"));
+    private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtProvider jwtProvider;
+    private final EmailService emailService;
 
-		if (user.getStatus() == AccountStatus.LOCKED) {
-			throw new AccountLockedException();
-		}
+    @Override
+    @Transactional
+    public LoginResponse login(
+            LoginRequest request,
+            HttpServletResponse response) {
 
-		if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-			throw new InvalidCredentialsException("Email/username hoặc mật khẩu không chính xác");
-		}
+        User user = findUserByEmailOrFullName(request.getUsernameOrEmail())
+                .orElseThrow(() -> new InvalidCredentialsException(
+                        "Email/họ tên hoặc mật khẩu không chính xác"));
 
-		TokenResponse token = issueTokenPair(user, response);
+        if (user.getStatus() == AccountStatus.LOCKED) {
+            throw new AccountLockedException();
+        }
 
-		return LoginResponse.builder().token(token).user(toAccountResponse(user)).build();
-	}
+        if (!passwordEncoder.matches(
+                request.getPassword(),
+                user.getPassword())) {
 
-	@Override
-	@Transactional
-	public void logout(String refreshToken, HttpServletResponse response) {
-		if (refreshToken != null) {
-			refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
-		}
+            throw new InvalidCredentialsException(
+                    "Email/họ tên hoặc mật khẩu không chính xác");
+        }
 
-		Cookie cookie = new Cookie("refresh_token", null);
-		cookie.setHttpOnly(true);
-		cookie.setSecure(false);
-		cookie.setPath("/");
-		cookie.setMaxAge(0);
+        TokenResponse token = issueTokenPair(user, response);
 
-		response.addCookie(cookie);
-		log.info("Đã xóa phiên đăng xuất và xóa Cookie refresh_token.");
-	}
+        return LoginResponse.builder()
+                .token(token)
+                .user(toAccountResponse(user))
+                .build();
+    }
 
-	@Override
-	@Transactional
-	public String refreshToken(String rawToken) {
-		if (rawToken == null || !jwtProvider.validateToken(rawToken)) {
-			throw new RefreshTokenNotFoundException();
-		}
+    @Override
+    @Transactional
+    public void logout(
+            String refreshToken,
+            HttpServletResponse response) {
 
-		RefreshToken storedToken = refreshTokenRepository.findByToken(rawToken)
-				.orElseThrow(RefreshTokenNotFoundException::new);
+        if (refreshToken != null) {
+            refreshTokenRepository
+                    .findByToken(refreshToken)
+                    .ifPresent(refreshTokenRepository::delete);
+        }
 
-		if (storedToken.isExpired()) {
-			refreshTokenRepository.delete(storedToken);
-			throw new RefreshTokenNotFoundException();
-		}
+        Cookie cookie = new Cookie("refresh_token", null);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(false);
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
 
-		User user = storedToken.getUser();
+        response.addCookie(cookie);
 
-		if (user.getStatus() == AccountStatus.LOCKED) {
-			refreshTokenRepository.delete(storedToken);
-			throw new AccountLockedException();
-		}
+        log.info("Đã xóa phiên đăng xuất và xóa Cookie refresh_token.");
+    }
 
-		String accessToken = jwtProvider.generateAccessToken(user);
+    @Override
+    @Transactional
+    public String refreshToken(String rawToken) {
 
-		return accessToken;
-	}
+        if (rawToken == null || !jwtProvider.validateToken(rawToken)) {
+            throw new RefreshTokenNotFoundException();
+        }
 
-	@Override
-	@Transactional
-	public AccountResponse registerAccount(RegisterRequest request) {
-		if (userRepository.existsByEmail(request.getEmail())) {
-			throw new EmailAlreadyExistsException(request.getEmail());
-		}
+        RefreshToken storedToken = refreshTokenRepository
+                .findByToken(rawToken)
+                .orElseThrow(RefreshTokenNotFoundException::new);
 
-		if (AccountRole.ADMIN.equals(request.getRole())) {
-			throw new IllegalArgumentException("Vai trò không hợp lệ");
-		}
+        if (storedToken.isExpired()) {
+            refreshTokenRepository.delete(storedToken);
+            throw new RefreshTokenNotFoundException();
+        }
 
-		User user = User.builder().fullName(request.getFullName()).email(request.getEmail())
-				.password(passwordEncoder.encode(request.getPassword())).role(request.getRole())
-				.status(AccountStatus.ACTIVE).build();
+        User user = storedToken.getUser();
 
-		User saved = userRepository.save(user);
+        if (user.getStatus() == AccountStatus.LOCKED) {
+            refreshTokenRepository.delete(storedToken);
+            throw new AccountLockedException();
+        }
 
-		return toAccountResponse(saved);
-	}
+        return jwtProvider.generateAccessToken(user);
+    }
 
-	private TokenResponse issueTokenPair(User user, HttpServletResponse response) {
-		String accessToken = jwtProvider.generateAccessToken(user);
-		String refreshTokenValue = jwtProvider.generateRefreshToken(user);
+    @Override
+    @Transactional
+    public AccountResponse registerAccount(RegisterRequest request) {
 
-		long expiryMs = jwtProvider.getRefreshTokenExpirationMs();
-		RefreshToken refreshToken = RefreshToken.builder().token(refreshTokenValue)
-				.expiryDate(LocalDateTime.now().plus(Duration.ofMillis(expiryMs))).user(user).build();
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new EmailAlreadyExistsException(request.getEmail());
+        }
 
-		refreshTokenRepository.save(refreshToken);
+        if (AccountRole.ADMIN.equals(request.getRole())) {
+            throw new IllegalArgumentException(
+                    "Không thể đăng ký tài khoản ADMIN");
+        }
 
-		Cookie cookie = new Cookie("refresh_token", refreshTokenValue);
-		cookie.setHttpOnly(true);
-		cookie.setSecure(false);
-		cookie.setPath("/");
-		cookie.setMaxAge((int) (expiryMs / 1000));
+        User user = User.builder()
+                .fullName(request.getFullName())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role(request.getRole())
+                .status(AccountStatus.ACTIVE)
+                .build();
 
-		response.addCookie(cookie);
+        User savedUser = userRepository.save(user);
 
-		return TokenResponse.builder().accessToken(accessToken).tokenType("Bearer")
-				.expiresIn(jwtProvider.getAccessTokenExpirationMs() / 1000).build();
-	}
+        return toAccountResponse(savedUser);
+    }
 
-	private Optional<User> findUserByEmailOrUsername(String emailOrUsername) {
-		return userRepository.findByEmail(emailOrUsername).or(() -> userRepository.findByUsername(emailOrUsername));
-	}
+    private TokenResponse issueTokenPair(
+            User user,
+            HttpServletResponse response) {
 
-	private AccountResponse toAccountResponse(User user) {
-		return AccountResponse.builder().id(user.getId()).fullName(user.getFullName()).email(user.getEmail())
-				.username(user.getUsername()).role(user.getRole()).status(user.getStatus())
-				.createdAt(user.getCreatedAt()).build();
-	}
+        String accessToken =
+                jwtProvider.generateAccessToken(user);
 
-	@Override
-	public AccountResponse findAccount(String email) {
-		User user = userRepository.findByEmail(email)
-				.orElseThrow(() -> new IllegalArgumentException("User with email:"+email+" not found"));
+        String refreshTokenValue =
+                jwtProvider.generateRefreshToken(user);
 
-		return toAccountResponse(user);
-	}
+        long expiryMs =
+                jwtProvider.getRefreshTokenExpirationMs();
 
-	@Override
-	public boolean generateTokenAndSendMailReset(String email) {
-		userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("Email not found"));
+        RefreshToken refreshToken =
+                RefreshToken.builder()
+                        .token(refreshTokenValue)
+                        .expiryDate(
+                                LocalDateTime.now()
+                                        .plus(Duration.ofMillis(expiryMs)))
+                        .user(user)
+                        .build();
 
-		String resetToken = UUID.randomUUID().toString();
+        refreshTokenRepository.save(refreshToken);
 
-		redisTemplate.opsForValue().set("RESET_" + resetToken, email, 15, TimeUnit.MINUTES);
+        Cookie cookie =
+                new Cookie("refresh_token", refreshTokenValue);
 
-		return emailService.sendResetEmail(email, resetToken);
-	}
+        cookie.setHttpOnly(true);
+        cookie.setSecure(false);
+        cookie.setPath("/");
+        cookie.setMaxAge((int) (expiryMs / 1000));
 
-	@Override
-	public boolean resetPassword(String token, String password) {
-		String key = "RESET_" + token;
+        response.addCookie(cookie);
 
-		String email = (String) redisTemplate.opsForValue().get(key);
+        return TokenResponse.builder()
+                .accessToken(accessToken)
+                .tokenType("Bearer")
+                .expiresIn(
+                        jwtProvider.getAccessTokenExpirationMs() / 1000)
+                .build();
+    }
 
-		if (email == null || email.isBlank()) {
-			throw new IllegalArgumentException("Token is expired or is incorrect");
-		}
+    /**
+     * Đăng nhập bằng email hoặc họ tên.
+     */
+    private Optional<User> findUserByEmailOrFullName(
+            String emailOrFullName) {
 
-		User userEntity = userRepository.findByEmail(email).orElse(null);
+        Optional<User> user =
+                userRepository.findByEmail(emailOrFullName);
 
-		if (userEntity == null) {
-			throw new IllegalArgumentException("Email not found");
-		}
-		userEntity.setPassword(passwordEncoder.encode(password));
+        if (user.isPresent()) {
+            return user;
+        }
 
-		userRepository.save(userEntity);
+        return userRepository.findByFullName(emailOrFullName);
+    }
 
-		redisTemplate.delete(key);
+    private AccountResponse toAccountResponse(User user) {
 
-		return true;
-	}
+        return AccountResponse.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .status(user.getStatus())
+                .createdAt(user.getCreatedAt())
+                .build();
+    }
 
+    @Override
+    public AccountResponse findAccount(String email) {
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "User with email: "
+                                        + email
+                                        + " not found"));
+
+        return toAccountResponse(user);
+    }
+
+    @Override
+    public boolean generateTokenAndSendMailReset(String email) {
+
+        userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Email not found"));
+
+        String resetToken =
+                UUID.randomUUID().toString();
+
+        redisTemplate.opsForValue().set(
+                "RESET_" + resetToken,
+                email,
+                15,
+                TimeUnit.MINUTES);
+
+        return emailService.sendResetEmail(
+                email,
+                resetToken);
+    }
+
+    @Override
+    public boolean resetPassword(
+            String token,
+            String password) {
+
+        String key = "RESET_" + token;
+
+        String email =
+                (String) redisTemplate
+                        .opsForValue()
+                        .get(key);
+
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Token is expired or is incorrect");
+        }
+
+        User userEntity =
+                userRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Email not found"));
+
+        userEntity.setPassword(
+                passwordEncoder.encode(password));
+
+        userRepository.save(userEntity);
+
+        redisTemplate.delete(key);
+
+        return true;
+    }
 }

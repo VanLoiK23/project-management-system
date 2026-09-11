@@ -24,6 +24,7 @@ const roleMenus = {
     { label: "Tổng quan", icon: LayoutDashboard, path: "/pm/dashboard" },
     { label: "Dự án của tôi", icon: FolderKanban, path: "/pm/projects" },
     { label: "Quản lý Công việc", icon: CheckSquare, path: "/pm/tasks" },
+    { label: "Quản lý tiến độ", icon: CheckSquare, path: "/pm/progress" },
     { label: "Thành viên Team", icon: Users, path: "/pm/team" },
     { label: "Báo cáo", icon: ClipboardList, path: "/pm/reports" },
   ],
@@ -31,6 +32,7 @@ const roleMenus = {
     { label: "Công việc của tôi", icon: CheckSquare, path: "/member/tasks" },
     { label: "Dự án tham gia", icon: FolderKanban, path: "/member/projects" },
     { label: "Báo cáo tiến độ", icon: ClipboardList, path: "/member/reports" },
+    { label: "Tiến độ dự án", icon: ClipboardList, path: "/member/progress" },
   ],
 };
 

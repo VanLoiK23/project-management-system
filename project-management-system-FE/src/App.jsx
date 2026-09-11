@@ -5,7 +5,6 @@ import Header from "./components/Header"; // Thay đổi đường dẫn tuỳ t
 import { AuthContext } from "./components/context/auth.context";
 import roleMenus from "./components/RoleMenu";
 import axios from "./utils/axios.customize";
-import CircleLoading from "./components/animation-loading";
 
 export default function App() {
   const { auth, setAuth, isAppLoading } = useContext(AuthContext);
@@ -19,7 +18,7 @@ export default function App() {
       await axios.post("/auth/logout", {}, { withCredentials: true });
     } catch (error) {
       console.error("Lỗi logout:", error);
-    } finally { 
+    } finally {
       localStorage.removeItem("access_token");
       setAuth({
         isAuthenticated: false,
@@ -31,8 +30,11 @@ export default function App() {
 
   if (isAppLoading) {
     return (
-      <div className="flex justify-center items-center">
-        <CircleLoading />
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
+        <span className="flex items-center gap-2 text-navy-600 font-medium">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-navy-600 border-t-transparent" />
+          Đang tải dữ liệu hệ thống...
+        </span>
       </div>
     );
   }
@@ -45,7 +47,7 @@ export default function App() {
   const menuItems = roleMenus[role.toUpperCase()] || roleMenus.MEMBER;
 
   const currentMenu = menuItems.find((item) =>
-    currentPath.startsWith(item.path)
+    currentPath.startsWith(item.path),
   );
   const computedPageTitle = currentMenu ? currentMenu.label : "Dashboard";
 

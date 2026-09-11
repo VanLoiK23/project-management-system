@@ -1,14 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css"
+import "react-toastify/dist/ReactToastify.css";
 import {
   createBrowserRouter,
   Outlet,
   RouterProvider,
   Navigate,
 } from "react-router-dom";
-import './index.css'
+import "./index.css";
 import App from "./App.jsx";
 import { AuthWrapper } from "./components/context/auth.context.jsx";
 import AuthPage from "./pages/auth/AuthPage.jsx";
@@ -18,9 +18,11 @@ import NotFound from "./pages/error/NotFound";
 import Forbidden from "./pages/error/Forbidden";
 import ProtectedRoute from "./route/ProtectedRoute.jsx";
 import RoleRoute from "./route/RoleRoute.jsx";
-
+import PmTasks from "./pages/pm/PmTasks.jsx";
 import ProjectDashboard from "./pages/pm/ProjectDashboard.jsx";
-
+import MemberTasks from "./pages/member/MemberTasks.jsx";
+import ProgressManagement from "./pages/pm/ProgressManagement.jsx";
+import MemberProgress from "./pages/member/MemberProgress.jsx";
 const router = createBrowserRouter([
   {
     path: "/",
@@ -59,8 +61,16 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <>{/* <PmDashboard /> */}</> }, // Tổng quan
-          { path: "projects", element: <>{<ProjectDashboard />}</> }, 
-          { path: "tasks", element: <>{/* <PmTasks /> */}</> }, // Quản lý Công việc
+          { path: "projects", element: <>{<ProjectDashboard />}</> },
+          // ================= QUẢN LÝ CÔNG VIỆC =================
+          {
+            path: "tasks",
+            element: <PmTasks />,
+          },
+          {
+            path: "progress",
+            element: <ProgressManagement />,
+          },
           { path: "team", element: <>{/* <PmTeam /> */}</> }, // Thành viên Team
           { path: "reports", element: <>{/* <PmReports /> */}</> }, // Báo cáo
         ],
@@ -76,7 +86,11 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <Navigate to="tasks" replace /> },
-          { path: "tasks", element: <>{/* <MemberTasks /> */}</> }, // Công việc của tôi
+          {
+            path: "tasks",
+            element: <MemberTasks />,
+          },
+          { path: "progress", element: <MemberProgress /> },
           { path: "projects", element: <>{/* <MemberProjects /> */}</> }, // Dự án tham gia
           { path: "reports", element: <>{/* <MemberReports /> */}</> }, // Báo cáo tiến độ
         ],
@@ -84,9 +98,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  { path: "/projects", element: <>{<ProjectDashboard />}</> }, 
-
-  // PUBLIC 
+  // PUBLIC
   { path: "/auth", element: <AuthPage /> },
   { path: "/forgot-password", element: <ForgotPassword /> },
   { path: "/reset-password/:token", element: <ResetPassword /> },
@@ -100,5 +112,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <ToastContainer position="top-right" autoClose={3000} />
       <RouterProvider router={router} />
     </AuthWrapper>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
