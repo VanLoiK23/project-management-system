@@ -22,9 +22,13 @@ import RoleRoute from "./route/RoleRoute.jsx";
 import ProjectDashboard from "./pages/pm/ProjectDashboard.jsx";
 import Milestones from "./pages/pm/Milestones.jsx";
 import Issues from "./pages/pm/Issues.jsx";
+import Documents from "./pages/pm/Documents.jsx";
+import PmDashboard from "./pages/pm/PmDashboard.jsx";
+import PmTeam from "./pages/pm/PmTeam.jsx";
+import ReportsPage from "./pages/pm/ReportsPage.jsx";
+import TasksPage from "./pages/pm/TasksPage.jsx";
 import AccountManagement from "./pages/admin/AccountManagement.jsx";
 import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
-import PMTeam from "./pages/pm/PMTeam.jsx";
 import MemberProjects from "./pages/members/MemberProjects.jsx";
 
 const router = createBrowserRouter([
@@ -64,13 +68,14 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
-          { path: "dashboard", element: <>{/* <PmDashboard /> */}</> }, // Tổng quan
-          { path: "projects", element: <>{<ProjectDashboard />}</> },
-          { path: "tasks", element: <>{/* <PmTasks /> */}</> }, // Quản lý Công việc
+          { path: "dashboard", element: <PmDashboard /> }, // Tổng quan
+          { path: "projects", element: <ProjectDashboard /> }, 
+          { path: "tasks", element: <TasksPage isPm={true} /> }, // Quản lý Công việc
           { path: "milestones", element: <Milestones /> }, // Lịch trình
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
-          { path: "team", element: <>{<PMTeam />}</> }, // Thành viên Team
-          { path: "reports", element: <>{/* <PmReports /> */}</> }, // Báo cáo
+          { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
+          { path: "team", element: <PmTeam /> }, // Thành viên Team
+          { path: "reports", element: <ReportsPage isPm={true} /> }, // Báo cáo
         ],
       },
 
@@ -83,11 +88,12 @@ const router = createBrowserRouter([
           </RoleRoute>
         ),
         children: [
-          { index: true, element: <Navigate to="tasks" replace /> },
-          { path: "tasks", element: <>{/* <MemberTasks /> */}</> }, // Công việc của tôi
+          { index: true, element: <Navigate to="projects" replace /> },
+          { path: "tasks", element: <TasksPage isPm={false} /> }, // Công việc của tôi
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
+          { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
+          { path: "reports", element: <ReportsPage isPm={false} /> }, // Báo cáo tiến độ
           { path: "projects", element: <>{<MemberProjects />}</> }, // Dự án tham gia
-          { path: "reports", element: <>{/* <MemberReports /> */}</> }, // Báo cáo tiến độ
         ],
       },
     ],

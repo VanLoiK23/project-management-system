@@ -421,7 +421,7 @@ function UserAutocomplete({
   );
 }
 
-function AddMemberModal({ project, onClose, onAdded, pushToast }) {
+export function AddMemberModal({ project, onClose, onAdded, pushToast }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [role, setRole] = useState("DEV");
   const [submitting, setSubmitting] = useState(false);
