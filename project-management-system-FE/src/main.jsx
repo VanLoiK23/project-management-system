@@ -1,14 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css"
+import "react-toastify/dist/ReactToastify.css";
 import {
   createBrowserRouter,
   Outlet,
   RouterProvider,
   Navigate,
 } from "react-router-dom";
-import './index.css'
+import "./index.css";
 import App from "./App.jsx";
 import { AuthWrapper } from "./components/context/auth.context.jsx";
 import AuthPage from "./pages/auth/AuthPage.jsx";
@@ -22,6 +22,10 @@ import RoleRoute from "./route/RoleRoute.jsx";
 import ProjectDashboard from "./pages/pm/ProjectDashboard.jsx";
 import Milestones from "./pages/pm/Milestones.jsx";
 import Issues from "./pages/pm/Issues.jsx";
+import AccountManagement from "./pages/admin/AccountManagement.jsx";
+import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
+import PMTeam from "./pages/pm/PMTeam.jsx";
+import MemberProjects from "./pages/members/MemberProjects.jsx";
 
 const router = createBrowserRouter([
   {
@@ -43,8 +47,8 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <>{/* <AdminDashboard /> */}</> }, // Tổng quan Hệ thống
-          { path: "users", element: <>{/* <AdminUsers /> */}</> }, // Quản lý Người dùng
-          { path: "projects", element: <>{/* <AdminProjects /> */}</> }, // Tất cả Dự án
+          { path: "users", element: <>{<AccountManagement />} </> }, // Quản lý Người dùng
+          { path: "projects", element: <>{<AdminProjectManagement />}</> }, // Tất cả Dự án
           { path: "roles", element: <>{/* <AdminRoles /> */}</> }, // Phân quyền
           { path: "settings", element: <>{/* <AdminSettings /> */}</> }, // Cài đặt Hệ thống
         ],
@@ -61,11 +65,11 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <>{/* <PmDashboard /> */}</> }, // Tổng quan
-          { path: "projects", element: <>{<ProjectDashboard />}</> }, 
+          { path: "projects", element: <>{<ProjectDashboard />}</> },
           { path: "tasks", element: <>{/* <PmTasks /> */}</> }, // Quản lý Công việc
           { path: "milestones", element: <Milestones /> }, // Lịch trình
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
-          { path: "team", element: <>{/* <PmTeam /> */}</> }, // Thành viên Team
+          { path: "team", element: <>{<PMTeam />}</> }, // Thành viên Team
           { path: "reports", element: <>{/* <PmReports /> */}</> }, // Báo cáo
         ],
       },
@@ -81,17 +85,17 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="tasks" replace /> },
           { path: "tasks", element: <>{/* <MemberTasks /> */}</> }, // Công việc của tôi
-          { path: "projects", element: <>{/* <MemberProjects /> */}</> }, // Dự án tham gia
           { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
+          { path: "projects", element: <>{<MemberProjects />}</> }, // Dự án tham gia
           { path: "reports", element: <>{/* <MemberReports /> */}</> }, // Báo cáo tiến độ
         ],
       },
     ],
   },
 
-  { path: "/projects", element: <>{<ProjectDashboard />}</> }, 
-
-  // PUBLIC 
+  { path: "/projects", element: <>{<MemberProjects />}</> },
+  { path: "/users", element: <>{<AccountManagement />}</> },
+  // PUBLIC
   { path: "/auth", element: <AuthPage /> },
   { path: "/forgot-password", element: <ForgotPassword /> },
   { path: "/reset-password/:token", element: <ResetPassword /> },
