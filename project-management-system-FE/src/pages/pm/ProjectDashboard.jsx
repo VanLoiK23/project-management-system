@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus,
   Calendar,
@@ -20,6 +21,7 @@ import {
   XCircle,
   Users,
   Save,
+  RefreshCw,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
@@ -1208,11 +1210,16 @@ function ProjectFormModal({
   );
 }
 
+// Memory cache for projects list
+let cachedProjectsList = null;
+
 export default function ProjectDashboard() {
+  const navigate = useNavigate();
   const { toasts, push: pushToast, dismiss } = useToasts();
 
-  const [projects, setProjects] = useState([]);
-  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [projects, setProjects] = useState(() => cachedProjectsList || []);
+  const [isLoadingList, setIsLoadingList] = useState(() => !cachedProjectsList);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [listError, setListError] = useState("");
 
@@ -1247,14 +1254,24 @@ export default function ProjectDashboard() {
 
   const menuRef = useRef(null);
 
-  const loadProjects = useCallback(async () => {
-    setIsLoadingList(true);
+  const loadProjects = useCallback(async (force = false) => {
+    if (!force && cachedProjectsList) {
+      setIsLoadingList(false);
+      return;
+    }
+
+    if (force) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoadingList(true);
+    }
     setListError("");
 
     try {
       const data = await apiFetchProjects();
-
-      setProjects(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      cachedProjectsList = list;
+      setProjects(list);
     } catch (error) {
       const message = getErrorMessage(error, "Không tải được danh sách dự án");
 
@@ -1263,11 +1280,14 @@ export default function ProjectDashboard() {
       pushToast("error", message);
     } finally {
       setIsLoadingList(false);
+      setIsRefreshing(false);
     }
   }, [pushToast]);
 
   useEffect(() => {
-    loadProjects();
+    if (!cachedProjectsList) {
+      loadProjects();
+    }
   }, [loadProjects]);
 
   useEffect(() => {
@@ -1449,7 +1469,7 @@ export default function ProjectDashboard() {
 
   function handleOpenDetail(project) {
     setActiveMenuId(null);
-    setDetailProject(project);
+    navigate(`/pm/projects/${project.id}`);
   }
 
   function handleRequestClose(project) {
@@ -1623,6 +1643,17 @@ export default function ProjectDashboard() {
               className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20 sm:w-64"
             />
           </div>
+
+          {/* REFRESH */}
+          <button
+            type="button"
+            onClick={() => loadProjects(true)}
+            disabled={isRefreshing}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 text-slate-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            Làm mới
+          </button>
 
           {/* CREATE */}
           <button

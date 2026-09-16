@@ -8,6 +8,8 @@ import {
   MessageSquare,
   Send,
   UserCircle2,
+  RefreshCw,
+  FolderKanban,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
@@ -55,49 +57,107 @@ const STATUS_BADGE = {
 
 const EMPTY_FORM = { title: "", description: "", severity: "MEDIUM" };
 
+// Memory cache for Issues
+let issuesCache = {
+  projects: null,
+  projectId: "",
+  membersByProject: {},
+  issuesByProject: {},
+};
+
 export default function Issues() {
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
-  const [members, setMembers] = useState([]);
-  const [issues, setIssues] = useState([]);
+  const [projects, setProjects] = useState(() => issuesCache.projects || []);
+  const [projectId, setProjectId] = useState(() => issuesCache.projectId || "");
+  const [members, setMembers] = useState(() =>
+    issuesCache.projectId ? issuesCache.membersByProject[issuesCache.projectId] || [] : []
+  );
+  const [issues, setIssues] = useState(() =>
+    issuesCache.projectId ? issuesCache.issuesByProject[issuesCache.projectId] || [] : []
+  );
   const [statusFilter, setStatusFilter] = useState("");
   const [severityFilter, setSeverityFilter] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !issuesCache.projects);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
-  const [activeIssue, setActiveIssue] = useState(null); // issue đang xem bình luận
+  const [activeIssue, setActiveIssue] = useState(null);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
 
   useEffect(() => {
+    if (issuesCache.projects && issuesCache.projects.length > 0) {
+      setProjects(issuesCache.projects);
+      if (!projectId && issuesCache.projectId) {
+        setProjectId(issuesCache.projectId);
+      }
+      return;
+    }
     apiFetchProjects().then((data) => {
-      setProjects(data);
-      if (data.length > 0) setProjectId(String(data[0].id));
+      const list = data || [];
+      issuesCache.projects = list;
+      setProjects(list);
+      if (list.length > 0 && !projectId) {
+        const firstId = String(list[0].id);
+        issuesCache.projectId = firstId;
+        setProjectId(firstId);
+      }
     });
   }, []);
 
   useEffect(() => {
-    if (projectId) apiFetchMembers(projectId).then(setMembers).catch(() => setMembers([]));
+    if (!projectId) return;
+    if (issuesCache.membersByProject[projectId]) {
+      setMembers(issuesCache.membersByProject[projectId]);
+      return;
+    }
+    apiFetchMembers(projectId)
+      .then((data) => {
+        const list = data || [];
+        issuesCache.membersByProject[projectId] = list;
+        setMembers(list);
+      })
+      .catch(() => setMembers([]));
   }, [projectId]);
 
-  const loadIssues = useCallback(() => {
+  const loadIssues = useCallback((force = false) => {
     if (!projectId) return;
-    setLoading(true);
+    const cacheKey = `${projectId}_${statusFilter}_${severityFilter}`;
+    if (!force && issuesCache.issuesByProject[cacheKey]) {
+      setIssues(issuesCache.issuesByProject[cacheKey]);
+      setLoading(false);
+      return;
+    }
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     apiFetchIssues(projectId, statusFilter || undefined, severityFilter || undefined)
-      .then(setIssues)
+      .then((data) => {
+        const list = data || [];
+        issuesCache.projectId = projectId;
+        issuesCache.issuesByProject[cacheKey] = list;
+        setIssues(list);
+      })
       .catch((err) => setError(err.message || "Không tải được danh sách vấn đề/lỗi"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [projectId, statusFilter, severityFilter]);
 
   useEffect(() => {
-    loadIssues();
-  }, [loadIssues]);
+    if (projectId) {
+      issuesCache.projectId = projectId;
+      loadIssues();
+    }
+  }, [projectId, loadIssues]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -107,7 +167,7 @@ export default function Issues() {
       await apiCreateIssue({ ...form, projectId: Number(projectId) });
       setShowForm(false);
       setForm(EMPTY_FORM);
-      loadIssues();
+      loadIssues(true);
     } catch (err) {
       setError(err.message || "Có lỗi xảy ra, vui lòng thử lại");
     } finally {
@@ -119,7 +179,7 @@ export default function Issues() {
     if (!assigneeId) return;
     try {
       await apiAssignIssue(issue.id, Number(assigneeId));
-      loadIssues();
+      loadIssues(true);
     } catch (err) {
       setError(err.message || "Không phân công được");
     }
@@ -128,18 +188,18 @@ export default function Issues() {
   const handleStatusChange = async (issue, status) => {
     try {
       await apiUpdateStatus(issue.id, status);
-      loadIssues();
+      loadIssues(true);
     } catch (err) {
-      setError(err.message || "Không cập nhật được trạng thái");
+      setError(err.message || "Không đổi được trạng thái");
     }
   };
 
   const handleSeverityChange = async (issue, severity) => {
     try {
       await apiUpdateSeverity(issue.id, severity);
-      loadIssues();
+      loadIssues(true);
     } catch (err) {
-      setError(err.message || "Không cập nhật được mức độ");
+      setError(err.message || "Không đổi được mức độ");
     }
   };
 
@@ -172,34 +232,49 @@ export default function Issues() {
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Vấn đề / Lỗi</h1>
           <p className="mt-1 text-sm text-slate-500">
             Báo cáo, phân công và theo dõi lỗi phát sinh trong dự án
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          disabled={!projectId}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Báo cáo lỗi mới
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => loadIssues(true)}
+            disabled={refreshing || !projectId}
+            title="Làm mới danh sách lỗi"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            disabled={!projectId}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            Báo cáo lỗi mới
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Dự án</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-navy-500 focus:outline-none focus:ring-2 focus:ring-navy-500/20"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+        <div className="w-64 max-w-full">
+          <label className="mb-1.5 block text-xs font-semibold text-slate-600 uppercase tracking-wider">Dự án</label>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
+            <FolderKanban className="h-4 w-4 shrink-0 text-slate-400" />
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              title={projects.find((p) => String(p.id) === String(projectId))?.name || ""}
+              className="w-full bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer truncate"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id} title={p.name}>{p.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Trạng thái</label>

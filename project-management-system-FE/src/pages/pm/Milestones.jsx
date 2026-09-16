@@ -7,6 +7,8 @@ import {
   X,
   Loader2,
   AlertTriangle,
+  RefreshCw,
+  FolderKanban,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
@@ -28,11 +30,21 @@ function statusOf(m) {
   return { label: "Đang diễn ra", cls: "bg-emerald-100 text-emerald-700 ring-emerald-500/20" };
 }
 
+// Memory cache for Milestones
+let milestonesCache = {
+  projects: null,
+  projectId: "",
+  milestonesByProject: {},
+};
+
 export default function Milestones() {
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
-  const [milestones, setMilestones] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState(() => milestonesCache.projects || []);
+  const [projectId, setProjectId] = useState(() => milestonesCache.projectId || "");
+  const [milestones, setMilestones] = useState(() =>
+    milestonesCache.projectId ? milestonesCache.milestonesByProject[milestonesCache.projectId] || [] : []
+  );
+  const [loading, setLoading] = useState(() => !milestonesCache.projects);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -40,25 +52,58 @@ export default function Milestones() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (milestonesCache.projects && milestonesCache.projects.length > 0) {
+      setProjects(milestonesCache.projects);
+      if (!projectId && milestonesCache.projectId) {
+        setProjectId(milestonesCache.projectId);
+      }
+      return;
+    }
     apiFetchProjects().then((data) => {
-      setProjects(data);
-      if (data.length > 0) setProjectId(String(data[0].id));
+      const list = data || [];
+      milestonesCache.projects = list;
+      setProjects(list);
+      if (list.length > 0 && !projectId) {
+        const firstId = String(list[0].id);
+        milestonesCache.projectId = firstId;
+        setProjectId(firstId);
+      }
     });
   }, []);
 
-  const loadMilestones = useCallback(() => {
+  const loadMilestones = useCallback((force = false) => {
     if (!projectId) return;
-    setLoading(true);
+    if (!force && milestonesCache.milestonesByProject[projectId]) {
+      setMilestones(milestonesCache.milestonesByProject[projectId]);
+      setLoading(false);
+      return;
+    }
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     apiFetchMilestones(projectId)
-      .then(setMilestones)
+      .then((data) => {
+        const list = data || [];
+        milestonesCache.projectId = projectId;
+        milestonesCache.milestonesByProject[projectId] = list;
+        setMilestones(list);
+      })
       .catch((err) => setError(err.message || "Không tải được lịch trình"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [projectId]);
 
   useEffect(() => {
-    loadMilestones();
-  }, [loadMilestones]);
+    if (projectId) {
+      milestonesCache.projectId = projectId;
+      loadMilestones();
+    }
+  }, [projectId, loadMilestones]);
 
   const openCreateForm = () => {
     setEditingId(null);
@@ -85,7 +130,7 @@ export default function Milestones() {
         await apiCreateMilestone({ ...form, projectId: Number(projectId) });
       }
       setShowForm(false);
-      loadMilestones();
+      loadMilestones(true);
     } catch (err) {
       setError(err.message || "Có lỗi xảy ra, vui lòng thử lại");
     } finally {
@@ -97,7 +142,7 @@ export default function Milestones() {
     if (!window.confirm("Xóa lịch trình này? Hành động không thể hoàn tác.")) return;
     try {
       await apiDeleteMilestone(id);
-      loadMilestones();
+      loadMilestones(true);
     } catch (err) {
       setError(err.message || "Không xóa được lịch trình");
     }
@@ -106,37 +151,52 @@ export default function Milestones() {
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Lịch trình dự án</h1>
           <p className="mt-1 text-sm text-slate-500">
             Theo dõi các mốc/sprint quan trọng của từng dự án
           </p>
         </div>
-        <button
-          onClick={openCreateForm}
-          disabled={!projectId}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Thêm lịch trình
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => loadMilestones(true)}
+            disabled={refreshing || !projectId}
+            title="Làm mới lịch trình"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
+          </button>
+          <button
+            onClick={openCreateForm}
+            disabled={!projectId}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm lịch trình
+          </button>
+        </div>
       </div>
 
-      <div className="mb-6">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          Dự án
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm max-w-md">
+        <label className="mb-1.5 block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+          Dự án đang chọn
         </label>
-        <select
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-          className="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-navy-500 focus:outline-none focus:ring-2 focus:ring-navy-500/20"
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+          <FolderKanban className="h-4 w-4 shrink-0 text-slate-400" />
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            title={projects.find((p) => String(p.id) === String(projectId))?.name || ""}
+            className="w-full bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer truncate"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id} title={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {error && (

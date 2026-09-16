@@ -24,15 +24,7 @@ export default function Header({ user, pageTitle, onLogout }) {
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm">
-      
-      <div className="flex w-full max-w-lg items-center gap-6">
-        <div className="hidden min-w-max sm:block">
-          <h1 className="text-lg font-bold text-slate-900">{pageTitle || "Dashboard"}</h1>
-          <p className="text-xs text-slate-500">
-             {new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          </p>
-        </div>
-        
+      <div className="flex w-full max-w-md items-center">
         <div className="relative w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input

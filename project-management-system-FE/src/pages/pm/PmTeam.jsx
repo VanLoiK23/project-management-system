@@ -172,13 +172,24 @@ function formatDate(value) {
   return date.toLocaleDateString("vi-VN");
 }
 
+// Memory cache for PMTeam
+let teamCache = {
+  projects: null,
+  selectedProjectId: "",
+  membersByProject: {},
+};
+
 export default function PMTeam() {
-  const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [projects, setProjects] = useState(() => teamCache.projects || []);
+  const [selectedProjectId, setSelectedProjectId] = useState(() => 
+    teamCache.selectedProjectId || (teamCache.projects?.[0] ? String(teamCache.projects[0].id) : "")
+  );
 
-  const [members, setMembers] = useState([]);
+  const [members, setMembers] = useState(() =>
+    teamCache.selectedProjectId ? teamCache.membersByProject[teamCache.selectedProjectId] || [] : []
+  );
 
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingProjects, setLoadingProjects] = useState(() => !teamCache.projects);
 
   const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -205,12 +216,15 @@ export default function PMTeam() {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
   useEffect(() => {
+    if (teamCache.projects && teamCache.projects.length > 0) {
+      setProjects(teamCache.projects);
+      if (!selectedProjectId && teamCache.selectedProjectId) {
+        setSelectedProjectId(teamCache.selectedProjectId);
+      }
+      return;
+    }
     loadProjects();
   }, []);
-
-  useEffect(() => {
-    setPage(0);
-  }, [searchKeyword, roleFilter, statusFilter, pageSize]);
 
   useEffect(() => {
     setPage(0);
@@ -221,8 +235,14 @@ export default function PMTeam() {
       setMembers([]);
       return;
     }
+
+    teamCache.selectedProjectId = selectedProjectId;
   
-    loadMembers(selectedProjectId);
+    if (!teamCache.membersByProject[selectedProjectId]) {
+      loadMembers(selectedProjectId);
+    } else {
+      setMembers(teamCache.membersByProject[selectedProjectId]);
+    }
   }, [selectedProjectId, page]);
 
   const loadProjects = async () => {
@@ -234,10 +254,13 @@ export default function PMTeam() {
 
       const list = Array.isArray(data) ? data : data?.content ?? [];
 
+      teamCache.projects = list;
       setProjects(list);
 
       if (list.length > 0) {
-        setSelectedProjectId(String(list[0].id));
+        const firstId = String(list[0].id);
+        teamCache.selectedProjectId = firstId;
+        setSelectedProjectId(firstId);
       }
     } catch (err) {
       setError(err?.response?.data?.message || "Không thể tải danh sách dự án");
@@ -247,9 +270,13 @@ export default function PMTeam() {
   };
 
   const loadMembers = useCallback(
-    async (projectId) => {
+    async (projectId, force = false) => {
       try {
-        setLoadingMembers(true);
+        if (force) {
+          setRefreshing(true);
+        } else {
+          setLoadingMembers(true);
+        }
         setError("");
 
         const data = await apiGetProjectMembers(projectId, {
@@ -258,12 +285,12 @@ export default function PMTeam() {
           keyword: searchKeyword.trim(),
           role: roleFilter || null,
           status: statusFilter || null,
-          // sortBy: "joinedAt",
-          // direction: "desc"
         });
 
         const list = Array.isArray(data) ? data : data?.content ?? [];
 
+        teamCache.selectedProjectId = projectId;
+        teamCache.membersByProject[projectId] = list;
         setMembers(list);
         setPage(0);
       } catch (err) {
@@ -273,6 +300,7 @@ export default function PMTeam() {
         );
       } finally {
         setLoadingMembers(false);
+        setRefreshing(false);
       }
     },
     [page, pageSize, searchKeyword, roleFilter, statusFilter]
@@ -429,15 +457,18 @@ export default function PMTeam() {
                   <button
                     type="button"
                     onClick={() => setShowProjectDropdown((value) => !value)}
-                    className="flex items-center gap-2 text-left text-base font-semibold text-slate-900"
+                    title={selectedProject?.name || ""}
+                    className="flex max-w-[280px] sm:max-w-[420px] items-center gap-2 text-left text-base font-semibold text-slate-900"
                   >
-                    {loadingProjects
-                      ? "Đang tải dự án..."
-                      : selectedProject?.name || "Chưa chọn dự án"}
+                    <span className="truncate">
+                      {loadingProjects
+                        ? "Đang tải dự án..."
+                        : selectedProject?.name || "Chưa chọn dự án"}
+                    </span>
 
                     <ChevronRight
                       size={17}
-                      className={`transition ${
+                      className={`shrink-0 transition ${
                         showProjectDropdown ? "rotate-90" : ""
                       }`}
                     />
@@ -987,53 +1018,57 @@ function EmptyState({ hasFilter, onClear }) {
 }
 
 function AddMemberModal({ projectId, existingMembers, onClose, onSuccess }) {
+  const [allUsers, setAllUsers] = useState([]);
   const [keyword, setKeyword] = useState("");
-
-  const [users, setUsers] = useState([]);
-
   const [selectedUser, setSelectedUser] = useState(null);
-
   const [role, setRole] = useState("DEV");
-
   const [loading, setLoading] = useState(false);
-
-  const [searching, setSearching] = useState(false);
-
+  const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
 
+  const existingIds = useMemo(() => {
+    return new Set(
+      (existingMembers || []).map((member) => String(getMemberUserId(member)))
+    );
+  }, [existingMembers]);
+
   useEffect(() => {
-    if (!keyword.trim()) {
-      setUsers([]);
-      return;
-    }
+    let mounted = true;
+    setFetching(true);
+    setError("");
 
-    const timer = setTimeout(() => searchUsers(), 350);
+    apiSearchUsers("")
+      .then((data) => {
+        if (!mounted) return;
+        const list = Array.isArray(data) ? data : data?.content ?? [];
+        setAllUsers(list);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setError(err?.response?.data?.message || "Không thể tải danh sách người dùng");
+      })
+      .finally(() => {
+        if (mounted) setFetching(false);
+      });
 
-    return () => clearTimeout(timer);
-  }, [keyword]);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  const existingIds = new Set(
-    existingMembers.map((member) => String(getMemberUserId(member)))
-  );
+  const availableUsers = useMemo(() => {
+    return allUsers.filter((user) => !existingIds.has(String(user.id)));
+  }, [allUsers, existingIds]);
 
-  const searchUsers = async () => {
-    try {
-      setSearching(true);
-      setError("");
-
-      const data = await apiSearchUsers(keyword.trim());
-
-      const list = Array.isArray(data) ? data : data?.content ?? [];
-
-      setUsers(list.filter((user) => !existingIds.has(String(user.id))));
-    } catch (err) {
-      setUsers([]);
-
-      setError(err?.response?.data?.message || "Không thể tìm kiếm người dùng");
-    } finally {
-      setSearching(false);
-    }
-  };
+  const filteredUsers = useMemo(() => {
+    if (!keyword.trim()) return availableUsers;
+    const lower = keyword.trim().toLowerCase();
+    return availableUsers.filter(
+      (u) =>
+        (u.fullName || u.name || "").toLowerCase().includes(lower) ||
+        (u.email || "").toLowerCase().includes(lower)
+    );
+  }, [availableUsers, keyword]);
 
   const handleSubmit = async () => {
     if (!selectedUser) {
@@ -1061,94 +1096,91 @@ function AddMemberModal({ projectId, existingMembers, onClose, onSuccess }) {
   return (
     <ModalShell
       title="Thêm thành viên"
-      subtitle="Thêm một người dùng vào dự án và phân công vai trò."
+      subtitle="Chọn người dùng từ hệ thống và phân công vai trò trong dự án."
       onClose={onClose}
     >
       <div className="space-y-5">
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">
-            Tìm thành viên
+            Chọn thành viên <span className="text-rose-500">*</span>
           </label>
 
-          <div className="relative">
-            <Search
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-
-            <input
-              autoFocus
-              value={keyword}
-              onChange={(event) => {
-                setKeyword(event.target.value);
-                setSelectedUser(null);
-              }}
-              placeholder="Nhập họ tên hoặc email..."
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            />
-
-            {searching && (
-              <RefreshCw
-                size={16}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 animate-spin text-slate-400"
-              />
-            )}
-          </div>
-
-          {users.length > 0 && !selectedUser && (
-            <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-              {users.map((user) => (
-                <button
-                  type="button"
-                  key={user.id}
-                  onClick={() => {
-                    setSelectedUser(user);
-                    setKeyword(user.fullName ?? user.name ?? user.email);
-                    setUsers([]);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-600">
-                    {getInitials(user.fullName ?? user.name)}
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-800">
-                      {user.fullName ?? user.name}
-                    </p>
-
-                    <p className="truncate text-xs text-slate-500">
-                      {user.email}
-                    </p>
-                  </div>
-                </button>
-              ))}
+          {fetching ? (
+            <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-400">
+              <RefreshCw size={16} className="animate-spin text-blue-500" />
+              Đang tải danh sách người dùng...
             </div>
-          )}
-
-          {selectedUser && (
-            <div className="mt-2 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50/60 p-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                  {getInitials(selectedUser.fullName ?? selectedUser.name)}
-                </div>
-
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">
-                    {selectedUser.fullName ?? selectedUser.name}
-                  </p>
-
-                  <p className="text-xs text-slate-500">{selectedUser.email}</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedUser(null)}
-                className="text-slate-400 hover:text-slate-700"
+          ) : availableUsers.length === 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+              Tất cả người dùng trong hệ thống đã tham gia dự án này.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Dropdown cho người dùng chọn trực tiếp */}
+              <select
+                value={selectedUser ? String(selectedUser.id) : ""}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  const found = availableUsers.find((u) => String(u.id) === id);
+                  setSelectedUser(found || null);
+                  setError("");
+                }}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"
               >
-                <X size={17} />
-              </button>
+                <option value="">
+                  -- Bấm để chọn thành viên ({availableUsers.length} người có thể thêm) --
+                </option>
+                {filteredUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName ?? user.name ?? "Chưa đặt tên"} — {user.email} ({user.role ?? "MEMBER"})
+                  </option>
+                ))}
+              </select>
+
+              {/* Ô lọc nhanh nếu danh sách nhiều người */}
+              {availableUsers.length > 5 && (
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    placeholder="Lọc nhanh theo tên hoặc email..."
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+                  />
+                </div>
+              )}
+
+              {/* Thẻ hiển thị thành viên đã chọn */}
+              {selectedUser && (
+                <div className="flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-sm">
+                      {getInitials(selectedUser.fullName ?? selectedUser.name)}
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {selectedUser.fullName ?? selectedUser.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {selectedUser.email} • {selectedUser.role ?? "MEMBER"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUser(null)}
+                    className="rounded-lg p-1 text-slate-400 transition hover:bg-blue-100 hover:text-slate-700"
+                    title="Chọn người khác"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1177,6 +1209,7 @@ function AddMemberModal({ projectId, existingMembers, onClose, onSuccess }) {
           onClose={onClose}
           onSubmit={handleSubmit}
           loading={loading}
+          disabled={!selectedUser || availableUsers.length === 0}
           submitText="Thêm thành viên"
         />
       </div>
@@ -1362,7 +1395,7 @@ function ModalShell({ title, subtitle, onClose, children }) {
   );
 }
 
-function ModalActions({ onClose, onSubmit, loading, submitText }) {
+function ModalActions({ onClose, onSubmit, loading, disabled, submitText }) {
   return (
     <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
       <button
@@ -1377,8 +1410,8 @@ function ModalActions({ onClose, onSubmit, loading, submitText }) {
       <button
         type="button"
         onClick={onSubmit}
-        disabled={loading}
-        className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+        disabled={loading || disabled}
+        className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? (
           <RefreshCw size={16} className="animate-spin" />

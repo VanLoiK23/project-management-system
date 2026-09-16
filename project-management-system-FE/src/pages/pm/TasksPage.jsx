@@ -15,6 +15,9 @@ import {
   MessageSquare,
   Users,
   ChevronDown,
+  RefreshCw,
+  Loader2,
+  FolderKanban,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import axios from "../../utils/axios.customize";
@@ -256,19 +259,34 @@ function getInitials(name) {
 // MAIN
 // =========================================================
 
-export default function PmTasks() {
-  const [tasks, setTasks] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [members, setMembers] = useState([]);
+// Memory cache for TasksPage
+let tasksCache = {
+  projects: null,
+  selectedProjectId: "",
+  tasksByProject: {},
+  membersByProject: {},
+};
 
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+export default function PmTasks() {
+  const [tasks, setTasks] = useState(() => 
+    tasksCache.selectedProjectId ? tasksCache.tasksByProject[tasksCache.selectedProjectId] || [] : []
+  );
+  const [projects, setProjects] = useState(() => tasksCache.projects || []);
+  const [members, setMembers] = useState(() => 
+    tasksCache.selectedProjectId ? tasksCache.membersByProject[tasksCache.selectedProjectId] || [] : []
+  );
+
+  const [selectedProjectId, setSelectedProjectId] = useState(() => 
+    tasksCache.selectedProjectId || (tasksCache.projects?.[0] ? String(tasksCache.projects[0].id) : "")
+  );
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !tasksCache.projects);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -290,6 +308,13 @@ export default function PmTasks() {
   // =========================================================
 
   useEffect(() => {
+    if (tasksCache.projects && tasksCache.projects.length > 0) {
+      setProjects(tasksCache.projects);
+      if (!selectedProjectId && tasksCache.selectedProjectId) {
+        setSelectedProjectId(tasksCache.selectedProjectId);
+      }
+      return;
+    }
     loadProjects();
   }, []);
 
@@ -301,10 +326,12 @@ export default function PmTasks() {
 
       const projectList = Array.isArray(data) ? data : [];
 
+      tasksCache.projects = projectList;
       setProjects(projectList);
 
       if (projectList.length === 0) {
         setSelectedProjectId("");
+        tasksCache.selectedProjectId = "";
         return;
       }
 
@@ -313,7 +340,9 @@ export default function PmTasks() {
           (project) => String(project.id) === String(currentId),
         );
 
-        return exists ? currentId : String(projectList[0].id);
+        const targetId = exists ? currentId : String(projectList[0].id);
+        tasksCache.selectedProjectId = targetId;
+        return targetId;
       });
     } catch (error) {
       console.error("Load projects error:", error);
@@ -335,9 +364,19 @@ export default function PmTasks() {
     const projectId = e.target.value;
 
     setSelectedProjectId(projectId);
+    tasksCache.selectedProjectId = projectId;
 
-    setTasks([]);
-    setMembers([]);
+    if (tasksCache.tasksByProject[projectId]) {
+      setTasks(tasksCache.tasksByProject[projectId]);
+    } else {
+      setTasks([]);
+    }
+
+    if (tasksCache.membersByProject[projectId]) {
+      setMembers(tasksCache.membersByProject[projectId]);
+    } else {
+      setMembers([]);
+    }
 
     setSearch("");
     setStatusFilter("");
@@ -368,16 +407,34 @@ export default function PmTasks() {
       return;
     }
 
-    loadTasks();
-    loadMembers();
+    tasksCache.selectedProjectId = selectedProjectId;
+
+    const hasCachedTasks = !!tasksCache.tasksByProject[selectedProjectId];
+    const hasCachedMembers = !!tasksCache.membersByProject[selectedProjectId];
+
+    if (!hasCachedTasks) {
+      loadTasks();
+    } else {
+      setTasks(tasksCache.tasksByProject[selectedProjectId]);
+    }
+
+    if (!hasCachedMembers) {
+      loadMembers();
+    } else {
+      setMembers(tasksCache.membersByProject[selectedProjectId]);
+    }
   }, [selectedProjectId]);
 
   // =========================================================
   // LOAD TASKS
   // =========================================================
 
-  async function loadTasks() {
-    setLoading(true);
+  async function loadTasks(force = false) {
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
       const response = await axios.get(`/projects/${selectedProjectId}/tasks`);
@@ -388,6 +445,7 @@ export default function PmTasks() {
         ? data.map(normalizeTask).filter(Boolean)
         : [];
 
+      tasksCache.tasksByProject[selectedProjectId] = taskList;
       setTasks(taskList);
     } catch (error) {
       console.error("Load tasks error:", error);
@@ -399,6 +457,7 @@ export default function PmTasks() {
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -406,7 +465,7 @@ export default function PmTasks() {
   // LOAD MEMBERS
   // =========================================================
 
-  async function loadMembers() {
+  async function loadMembers(force = false) {
     try {
       const response = await axios.get(
         `/projects/${selectedProjectId}/members`,
@@ -418,37 +477,18 @@ export default function PmTasks() {
         ? data.map(normalizeMember).filter(Boolean)
         : [];
 
+      tasksCache.membersByProject[selectedProjectId] = memberList;
       setMembers(memberList);
-
-      console.log("========== PROJECT MEMBERS ==========");
-
-      console.log("Project ID:", selectedProjectId);
-
-      console.log("Raw response:", response?.data);
-
-      console.log("Normalized members:", memberList);
-
-      memberList.forEach((member, index) => {
-        console.log(`Member ${index + 1}:`, {
-          id: member.id,
-          userId: member.userId,
-          fullName: member.fullName,
-          email: member.email,
-          role: member.role,
-          status: member.status,
-        });
-      });
-
-      console.log("=====================================");
     } catch (error) {
       console.error("Load members error:", error);
-
-      setMembers([]);
-
-      toast.error(
-        error?.response?.data?.message || "Không thể tải thành viên dự án.",
-      );
     }
+  }
+
+  async function handleRefresh() {
+    if (!selectedProjectId) return;
+    setRefreshing(true);
+    await Promise.all([loadTasks(true), loadMembers(true)]);
+    setRefreshing(false);
   }
 
   // =========================================================
@@ -1060,7 +1100,7 @@ export default function PmTasks() {
       {/* HEADER */}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             Quản lý công việc
           </h1>
@@ -1070,43 +1110,54 @@ export default function PmTasks() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          disabled={!selectedProjectId}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-navy-700 via-navy-600 to-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          Thêm công việc
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || !selectedProjectId}
+            title="Làm mới danh sách công việc"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
+          </button>
+
+          <button
+            type="button"
+            onClick={openCreateModal}
+            disabled={!selectedProjectId}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-navy-700 via-navy-600 to-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm công việc
+          </button>
+        </div>
       </div>
 
       {/* PROJECT */}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="max-w-md">
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Dự án
-          </label>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm max-w-md">
+        <label className="mb-1.5 block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+          Dự án
+        </label>
 
-          <div className="relative">
-            <select
-              value={selectedProjectId}
-              onChange={handleProjectChange}
-              disabled={projects.length === 0}
-              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20 disabled:bg-slate-50"
-            >
-              <option value="">-- Chọn dự án --</option>
+        <div className="relative">
+          <select
+            value={selectedProjectId}
+            onChange={handleProjectChange}
+            disabled={projects.length === 0}
+            title={projects.find((p) => String(p.id) === String(selectedProjectId))?.name || ""}
+            className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 pr-10 text-sm font-medium text-slate-700 outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20 disabled:bg-slate-100 truncate"
+          >
+            <option value="">-- Chọn dự án --</option>
 
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id} title={project.name}>
+                {project.name}
+              </option>
+            ))}
+          </select>
 
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          </div>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         </div>
       </div>
 

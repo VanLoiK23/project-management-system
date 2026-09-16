@@ -24,13 +24,14 @@ import Milestones from "./pages/pm/Milestones.jsx";
 import Issues from "./pages/pm/Issues.jsx";
 import Documents from "./pages/pm/Documents.jsx";
 import PmDashboard from "./pages/pm/PmDashboard.jsx";
-import PMTeam from "./pages/pm/PMTeam.jsx";
+import PMTeam from "./pages/pm/PmTeam.jsx";
 import ReportsPage from "./pages/pm/ReportsPage.jsx";
 import TasksPage from "./pages/pm/TasksPage.jsx";
 import AccountManagement from "./pages/admin/AccountManagement.jsx";
 import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
 import MemberProjects from "./pages/members/MemberProjects.jsx";
 import Progress from "./pages/pm/ProgressManagement.jsx";
+import ProjectDetailPage from "./pages/pm/ProjectDetailPage.jsx";
 const router = createBrowserRouter([
   {
     path: "/",
@@ -70,6 +71,7 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <PmDashboard /> }, // Tổng quan
           { path: "projects", element: <ProjectDashboard /> },
+          { path: "projects/:projectId", element: <ProjectDetailPage isPm={true} /> },
           { path: "tasks", element: <TasksPage isPm={true} /> }, // Quản lý Công việc
           { path: "progress", element: <Progress isPm={true} /> }, // Quản lý Công việc
           { path: "milestones", element: <Milestones /> }, // Lịch trình
@@ -95,6 +97,7 @@ const router = createBrowserRouter([
           { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
           { path: "reports", element: <ReportsPage isPm={false} /> }, // Báo cáo tiến độ
           { path: "projects", element: <>{<MemberProjects />}</> }, // Dự án tham gia
+          { path: "projects/:projectId", element: <ProjectDetailPage isPm={false} /> },
         ],
       },
     ],

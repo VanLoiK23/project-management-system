@@ -17,6 +17,7 @@ import {
   Clock,
   UserCircle2,
   Search,
+  RefreshCw,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
@@ -45,11 +46,21 @@ function getFileIcon(name = "") {
   return <FileText className="h-5 w-5 text-slate-600" />;
 }
 
+// Memory cache for Documents
+let documentsCache = {
+  projects: null,
+  projectId: "",
+  docsByProject: {},
+};
+
 export default function Documents() {
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
-  const [documents, setDocuments] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState(() => documentsCache.projects || []);
+  const [projectId, setProjectId] = useState(() => documentsCache.projectId || "");
+  const [documents, setDocuments] = useState(() => 
+    documentsCache.projectId ? documentsCache.docsByProject[documentsCache.projectId] || [] : []
+  );
+  const [loading, setLoading] = useState(() => !documentsCache.projects);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -74,30 +85,61 @@ export default function Documents() {
 
   // Load Projects on mount
   useEffect(() => {
+    if (documentsCache.projects && documentsCache.projects.length > 0) {
+      setProjects(documentsCache.projects);
+      if (!projectId && documentsCache.projectId) {
+        setProjectId(documentsCache.projectId);
+      }
+      return;
+    }
     apiFetchProjects()
       .then((data) => {
-        setProjects(data || []);
-        if (data && data.length > 0) {
-          setProjectId(String(data[0].id));
+        const list = data || [];
+        documentsCache.projects = list;
+        setProjects(list);
+        if (list.length > 0 && !projectId) {
+          const firstId = String(list[0].id);
+          documentsCache.projectId = firstId;
+          setProjectId(firstId);
         }
       })
       .catch((err) => setError(err.message || "Không thể tải danh sách dự án"));
   }, []);
 
   // Load Documents when projectId changes
-  const loadDocuments = useCallback(() => {
+  const loadDocuments = useCallback((force = false) => {
     if (!projectId) return;
-    setLoading(true);
+    if (!force && documentsCache.docsByProject[projectId]) {
+      setDocuments(documentsCache.docsByProject[projectId]);
+      setLoading(false);
+      return;
+    }
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     apiFetchDocuments(projectId)
-      .then((data) => setDocuments(data || []))
+      .then((data) => {
+        const list = data || [];
+        documentsCache.projectId = projectId;
+        documentsCache.docsByProject[projectId] = list;
+        setDocuments(list);
+      })
       .catch((err) => setError(err.message || "Không thể tải danh sách tài liệu"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [projectId]);
 
   useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+    if (projectId) {
+      documentsCache.projectId = projectId;
+      loadDocuments();
+    }
+  }, [projectId, loadDocuments]);
 
   const filteredDocuments = documents.filter((doc) => {
     const q = searchQuery.toLowerCase().trim();
@@ -203,7 +245,7 @@ export default function Documents() {
     }
     try {
       await apiDeleteDocument(docId);
-      loadDocuments();
+      loadDocuments(true);
     } catch (err) {
       alert(err.message || "Lỗi khi xóa tài liệu");
     }
@@ -225,50 +267,64 @@ export default function Documents() {
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Quản lý Tài liệu</h1>
           <p className="mt-1 text-sm text-slate-500">
             Lưu trữ tài liệu dự án, kiểm soát phiên bản và chia sẻ an toàn cho thành viên
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Toolbar Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
           {/* Search Box */}
-          <div className="relative">
+          <div className="relative w-40 sm:w-48 shrink-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm tài liệu..."
-              className="h-10 w-44 sm:w-52 rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20"
             />
           </div>
 
-          {/* Project Selector */}
-          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <FolderKanban className="h-4 w-4 text-slate-400" />
+          {/* Project Selector with fixed width and ellipsis */}
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm w-48 sm:w-56 md:w-64 shrink-0 overflow-hidden">
+            <FolderKanban className="h-4 w-4 shrink-0 text-slate-400" />
             <select
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
-              className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer"
+              title={projects.find((p) => String(p.id) === String(projectId))?.name || ""}
+              className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer w-full truncate pr-1"
             >
               {projects.map((p) => (
-                <option key={p.id} value={p.id}>
+                <option key={p.id} value={p.id} title={p.name}>
                   {p.name}
                 </option>
               ))}
             </select>
           </div>
 
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={() => loadDocuments(true)}
+            disabled={refreshing || !projectId}
+            title="Làm mới danh sách tài liệu"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
+          </button>
+
+          {/* Upload Button */}
           <button
             type="button"
             onClick={() => setShowUploadModal(true)}
             disabled={!projectId}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:opacity-50 transition-colors"
+            className="inline-flex h-10 shrink-0 whitespace-nowrap items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:opacity-50 transition-colors"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 shrink-0" />
             Tải lên tài liệu
           </button>
         </div>
@@ -317,21 +373,23 @@ export default function Documents() {
                   <th className="py-3.5 px-6">Phiên bản</th>
                   <th className="py-3.5 px-6">Người đăng</th>
                   <th className="py-3.5 px-6">Ngày cập nhật</th>
-                  <th className="py-3.5 px-6 text-right">Thao tác</th>
+                  <th className="py-3.5 px-6 text-right w-36">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {filteredDocuments.map((doc) => (
                   <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-6">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 p-2 rounded-lg bg-slate-50 border border-slate-100">
+                    <td className="py-4 px-6 max-w-[280px] sm:max-w-[360px]">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="mt-0.5 p-2 rounded-lg bg-slate-50 border border-slate-100 shrink-0">
                           {getFileIcon(doc.name)}
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-900 leading-snug">{doc.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-900 leading-snug truncate" title={doc.name}>
+                            {doc.name}
+                          </p>
                           {doc.description && (
-                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+                            <p className="text-xs text-slate-500 mt-0.5 truncate" title={doc.description}>
                               {doc.description}
                             </p>
                           )}
@@ -339,24 +397,24 @@ export default function Documents() {
                       </div>
                     </td>
 
-                    <td className="py-4 px-6">
+                    <td className="py-4 px-6 whitespace-nowrap">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         v{doc.currentVersionNumber || 1}
                       </span>
                     </td>
 
-                    <td className="py-4 px-6 text-slate-600">
+                    <td className="py-4 px-6 text-slate-600 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-xs">
                         <UserCircle2 className="h-4 w-4 text-slate-400" />
                         <span>{doc.uploadedByName || "Thành viên"}</span>
                       </div>
                     </td>
 
-                    <td className="py-4 px-6 text-xs text-slate-500">
+                    <td className="py-4 px-6 text-xs text-slate-500 whitespace-nowrap">
                       {formatDate(doc.updatedAt || doc.createdAt)}
                     </td>
 
-                    <td className="py-4 px-6 text-right">
+                    <td className="py-4 px-6 text-right whitespace-nowrap w-36">
                       <div className="flex items-center justify-end gap-1">
                         {/* Nút Tải xuống phiên bản mới nhất */}
                         <button
