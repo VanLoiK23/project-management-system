@@ -12,7 +12,7 @@ import com.c2.project_management_system.entity.DocumentVersion;
 @Repository
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, Long> {
 
-    List<DocumentVersion> findByDocumentOrderByVersionNumberDesc(Document document);
+	List<DocumentVersion> findByDocumentOrderByVersionNumberDesc(Document document);
 
-    Optional<DocumentVersion> findTopByDocumentOrderByVersionNumberDesc(Document document);
+	Optional<DocumentVersion> findTopByDocumentOrderByVersionNumberDesc(Document document);
 }

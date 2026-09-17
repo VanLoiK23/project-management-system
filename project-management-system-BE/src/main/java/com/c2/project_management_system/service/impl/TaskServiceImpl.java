@@ -1,9 +1,18 @@
 package com.c2.project_management_system.service.impl;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -13,13 +22,20 @@ import com.c2.project_management_system.dto.request.CommentRequest;
 import com.c2.project_management_system.dto.request.TaskRequest;
 import com.c2.project_management_system.dto.request.UpdateAssigneesRequest;
 import com.c2.project_management_system.dto.respone.TaskCommentResponse;
+import com.c2.project_management_system.dto.respone.TaskPageResponse;
 import com.c2.project_management_system.dto.respone.TaskResponse;
+import com.c2.project_management_system.dto.respone.TaskStatisticsResponse;
+import com.c2.project_management_system.entity.Milestone;
 import com.c2.project_management_system.entity.Project;
 import com.c2.project_management_system.entity.Task;
+import com.c2.project_management_system.entity.TaskComment;
 import com.c2.project_management_system.entity.User;
+import com.c2.project_management_system.repository.ProjectMemberRepository;
 import com.c2.project_management_system.repository.ProjectRepository;
+import com.c2.project_management_system.repository.TaskCommentRepository;
 import com.c2.project_management_system.repository.TaskRepository;
 import com.c2.project_management_system.repository.UserRepository;
+import com.c2.project_management_system.service.MilestoneService;
 import com.c2.project_management_system.service.TaskService;
 import com.c2.project_management_system.statusEnum.TaskPriority;
 import com.c2.project_management_system.statusEnum.TaskStatus;
@@ -31,843 +47,845 @@ import lombok.RequiredArgsConstructor;
 @Transactional
 public class TaskServiceImpl implements TaskService {
 
-    private final TaskRepository taskRepository;
-    private final UserRepository userRepository;
-    private final ProjectRepository projectRepository;
-
-    // =====================================================
-    // GET TASKS CỦA USER
-    // =====================================================
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<TaskResponse> getTasksForCurrentUser() {
-
-        User currentUser = getCurrentUser();
-
-        List<Task> tasks =
-                taskRepository.findByAssigneesContaining(currentUser);
-
-        return tasks.stream()
-                .map(this::toTaskResponse)
-                .toList();
-    }
-
-    // =====================================================
-    // GET TASKS THEO PROJECT
-    // =====================================================
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<TaskResponse> getTasksByProject(Long projectId) {
-
-        if (projectId == null) {
-            throw new IllegalArgumentException(
-                    "Project ID không được để trống");
-        }
-
-        projectRepository.findById(projectId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Không tìm thấy dự án"));
+	private final TaskRepository taskRepository;
+	private final UserRepository userRepository;
+	private final ProjectRepository projectRepository;
+	private final ProjectMemberRepository projectMemberRepository;
+	private final TaskCommentRepository taskCommentRepository;
+	private final MilestoneService milestoneService;
 
-        List<Task> tasks =
-                taskRepository.findByProjectId(projectId);
-
-        return tasks.stream()
-                .map(this::toTaskResponse)
-                .toList();
-    }
-
-    // =====================================================
-    // CREATE TASK
-    // =====================================================
-
-    @Override
-    public TaskResponse createTask(
-            Long projectId,
-            TaskRequest request) {
-
-        if (projectId == null) {
-            throw new IllegalArgumentException(
-                    "Project ID không được để trống");
-        }
-
-        if (request == null) {
-            throw new IllegalArgumentException(
-                    "Thông tin công việc không được để trống");
-        }
-
-        if (request.getName() == null ||
-                request.getName().isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Tên công việc không được để trống");
-        }
+	@Override
+	@Transactional(readOnly = true)
+	public List<TaskResponse> getTasksForCurrentUser() {
 
-        // =================================================
-        // LẤY USER HIỆN TẠI
-        // =================================================
+		User currentUser = getCurrentUser();
 
-        User currentUser = getCurrentUser();
+		return taskRepository.findByAssigneesContaining(currentUser).stream().map(this::toTaskResponse).toList();
+	}
 
-        // =================================================
-        // LẤY PROJECT
-        // =================================================
+	// CHANGED: server-side pagination + filter + sorting
+	@Override
+	@Transactional(readOnly = true)
+	public TaskPageResponse getTasksByProject(Long projectId, int page, int size, String keyword, String status,
+			String priority, Long assigneeId, String sortBy, String direction) {
 
-        Project project =
-                projectRepository.findById(projectId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy dự án"));
+		if (projectId == null) {
+			throw new IllegalArgumentException("Project ID không được để trống");
+		}
 
-        // =================================================
-        // KIỂM TRA QUYỀN
-        // =================================================
+		User currentUser = getCurrentUser();
 
-        boolean isProjectManager =
-                project.getProjectManager() != null
-                        && project.getProjectManager()
-                                .getId()
-                                .equals(currentUser.getId());
+		Project project = projectRepository.findById(projectId)
+				.orElseThrow(() -> new RuntimeException("Không tìm thấy dự án"));
 
-        boolean isAdmin =
-                currentUser.getRole() != null
-                        && currentUser.getRole()
-                                .name()
-                                .equalsIgnoreCase("ADMIN");
+		checkProjectAccess(project, currentUser);
 
-        if (!isProjectManager && !isAdmin) {
-            throw new RuntimeException(
-                    "Bạn không có quyền tạo công việc cho dự án này");
-        }
+		page = Math.max(page, 0);
 
-        // =================================================
-        // TẠO TASK
-        // =================================================
+		if (size <= 0) {
+			size = 10;
+		}
 
-        Task task = new Task();
+		if (size > 100) {
+			size = 100;
+		}
 
-        // =================================================
-        // BASIC INFO
-        // =================================================
+		TaskStatus taskStatus = parseStatus(status);
 
-        task.setTitle(
-                request.getName().trim());
+		TaskPriority taskPriority = parsePriority(priority);
 
-        task.setDescription(
-                request.getDescription());
+		String normalizedKeyword = keyword == null ? null : keyword.trim();
 
-        task.setDeadline(
-                request.getDeadline());
+		Sort sort = buildSort(sortBy, direction);
 
-        // =================================================
-        // PRIORITY
-        // =================================================
+		Pageable pageable = PageRequest.of(page, size, sort);
 
-        if (request.getPriority() != null &&
-                !request.getPriority().isBlank()) {
+		Page<Task> taskPage = taskRepository.findProjectTasks(projectId, normalizedKeyword, taskStatus, taskPriority,
+				assigneeId, pageable);
 
-            try {
+		List<TaskResponse> content = taskPage.getContent().stream().map(this::toTaskResponse).toList();
 
-                task.setPriority(
-                        TaskPriority.valueOf(
-                                request.getPriority()
-                                        .trim()
-                                        .toUpperCase()
-                        ));
+		TaskStatisticsResponse statistics = buildStatistics(projectId);
 
-            } catch (IllegalArgumentException e) {
+		return TaskPageResponse.builder().content(content).page(taskPage.getNumber()).size(taskPage.getSize())
+				.totalElements(taskPage.getTotalElements()).totalPages(taskPage.getTotalPages())
+				.first(taskPage.isFirst()).last(taskPage.isLast()).statistics(statistics).build();
+	}
 
-                throw new IllegalArgumentException(
-                        "Độ ưu tiên không hợp lệ: "
-                                + request.getPriority());
-            }
-        }
+	@Override
+	public TaskResponse createTask(Long projectId, TaskRequest request) {
 
-        // =================================================
-        // STATUS
-        // =================================================
+		if (projectId == null) {
+			throw new IllegalArgumentException("Project ID không được để trống");
+		}
 
-        task.setStatus(
-                TaskStatus.NOT_STARTED);
+		if (request == null) {
+			throw new IllegalArgumentException("Thông tin công việc không được để trống");
+		}
 
-        // =================================================
-        // PROGRESS
-        // =================================================
+		User currentUser = getCurrentUser();
 
-        task.setProgressPercent(0);
+		Project project = projectRepository.findById(projectId)
+				.orElseThrow(() -> new RuntimeException("Không tìm thấy dự án"));
 
-        // =================================================
-        // PROJECT
-        // =================================================
+		checkProjectManager(project, currentUser);
 
-        task.setProject(project);
+		checkProjectAllowsTaskManagement(project);
 
-        // =================================================
-        // CREATED BY
-        // =================================================
+		validateDeadline(request.getDeadline(), project);
 
-        task.setCreatedBy(currentUser);
+		TaskPriority taskPriority = parsePriorityRequired(request.getPriority());
 
-        // =================================================
-        // ASSIGNEES
-        // =================================================
+		List<Long> assigneeIds = normalizeIds(request.getAssigneeIds());
 
-        List<Long> assigneeIds =
-                request.getAssigneeIds();
+		validateAssignees(projectId, assigneeIds);
 
-        if (assigneeIds != null &&
-                !assigneeIds.isEmpty()) {
+		Task task = new Task();
 
-            List<User> users =
-                    userRepository.findAllById(
-                            assigneeIds);
+		task.setTitle(request.getName().trim());
 
-            task.setAssignees(
-                    new HashSet<>(users));
-        }
+		task.setDescription(request.getDescription() == null ? null : request.getDescription().trim());
 
-        // =================================================
-        // SAVE
-        // =================================================
+		task.setDeadline(request.getDeadline());
 
-        Task savedTask =
-                taskRepository.save(task);
+		task.setPriority(taskPriority);
 
-        return toTaskResponse(savedTask);
-    }
+		task.setStatus(TaskStatus.NOT_STARTED);
 
-    // =====================================================
-    // UPDATE TASK
-    // =====================================================
+		task.setProgressPercent(0);
 
-    @Override
-    public TaskResponse updateTask(
-            Long taskId,
-            TaskRequest request) {
+		task.setProject(project);
 
-        if (taskId == null) {
-            throw new IllegalArgumentException(
-                    "Task ID không được để trống");
-        }
+		task.setCreatedBy(currentUser);
 
-        if (request == null) {
-            throw new IllegalArgumentException(
-                    "Thông tin công việc không được để trống");
-        }
+		List<User> users = userRepository.findAllById(assigneeIds);
 
-        if (request.getName() == null ||
-                request.getName().isBlank()) {
+		if (users.size() != assigneeIds.size()) {
+			throw new IllegalArgumentException("Một hoặc nhiều người thực hiện không tồn tại");
+		}
 
-            throw new IllegalArgumentException(
-                    "Tên công việc không được để trống");
-        }
+		task.setAssignees(new HashSet<>(users));
 
-        User currentUser = getCurrentUser();
+		Task savedTask = taskRepository.save(task);
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		return toTaskResponse(savedTask);
+	}
 
-        checkProjectManager(
-                task,
-                currentUser);
+	@Override
+	public TaskResponse updateTask(Long taskId, TaskRequest request) {
 
-        // =================================================
-        // BASIC INFO
-        // =================================================
+		if (taskId == null) {
+			throw new IllegalArgumentException("Task ID không được để trống");
+		}
 
-        task.setTitle(
-                request.getName().trim());
+		if (request == null) {
+			throw new IllegalArgumentException("Thông tin công việc không được để trống");
+		}
 
-        task.setDescription(
-                request.getDescription());
+		User currentUser = getCurrentUser();
 
-        task.setDeadline(
-                request.getDeadline());
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        // =================================================
-        // PRIORITY
-        // =================================================
+		checkProjectManager(task, currentUser);
 
-        if (request.getPriority() != null &&
-                !request.getPriority().isBlank()) {
+		Project project = task.getProject();
 
-            try {
+		checkProjectAllowsTaskManagement(project);
 
-                task.setPriority(
-                        TaskPriority.valueOf(
-                                request.getPriority()
-                                        .trim()
-                                        .toUpperCase()
-                        ));
+		validateDeadline(request.getDeadline(), project);
 
-            } catch (IllegalArgumentException e) {
+		TaskPriority taskPriority = parsePriorityRequired(request.getPriority());
 
-                throw new IllegalArgumentException(
-                        "Độ ưu tiên không hợp lệ: "
-                                + request.getPriority());
-            }
-        }
+		List<Long> assigneeIds = normalizeIds(request.getAssigneeIds());
 
-        // =================================================
-        // ASSIGNEES
-        // =================================================
+		validateAssignees(project.getId(), assigneeIds);
 
-        List<Long> assigneeIds =
-                request.getAssigneeIds();
+		task.setTitle(request.getName().trim());
 
-        if (assigneeIds != null) {
+		task.setDescription(request.getDescription() == null ? null : request.getDescription().trim());
 
-            List<User> users =
-                    userRepository.findAllById(
-                            assigneeIds);
+		task.setDeadline(request.getDeadline());
 
-            task.setAssignees(
-                    new HashSet<>(users));
-        }
+		task.setPriority(taskPriority);
 
-        // =================================================
-        // SAVE
-        // =================================================
+		List<User> users = userRepository.findAllById(assigneeIds);
 
-        Task savedTask =
-                taskRepository.save(task);
+		if (users.size() != assigneeIds.size()) {
+			throw new IllegalArgumentException("Một hoặc nhiều người thực hiện không tồn tại");
+		}
 
-        return toTaskResponse(savedTask);
-    }
+		task.setAssignees(new HashSet<>(users));
 
-    // =====================================================
-    // DELETE TASK
-    // =====================================================
+		Task savedTask = taskRepository.save(task);
 
-    @Override
-    public void deleteTask(Long taskId) {
+		return toTaskResponse(savedTask);
+	}
 
-        if (taskId == null) {
-            throw new IllegalArgumentException(
-                    "Task ID không được để trống");
-        }
+	@Override
+	public void deleteTask(Long taskId) {
 
-        User currentUser = getCurrentUser();
+		if (taskId == null) {
+			throw new IllegalArgumentException("Task ID không được để trống");
+		}
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		User currentUser = getCurrentUser();
 
-        checkProjectManager(
-                task,
-                currentUser);
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        taskRepository.delete(task);
-    }
+		checkProjectManager(task, currentUser);
 
-    // =====================================================
-    // UPDATE STATUS
-    // =====================================================
+		checkProjectAllowsTaskManagement(task.getProject());
 
-    @Override
-    public TaskResponse updateStatus(
-            Long taskId,
-            String status) {
+		Set<Milestone> milestones = new HashSet<>(task.getMilestones());
 
-        User currentUser = getCurrentUser();
+		for (Milestone milestone : milestones) {
+			milestone.getTasks().remove(task);
+		}
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		task.getMilestones().clear();
 
-        checkProjectManagerOrAssignee(
-                task,
-                currentUser);
+		taskRepository.delete(task);
 
-        if (status == null ||
-                status.isBlank()) {
+		milestoneService.recalculateMilestones(milestones);
+	}
 
-            throw new IllegalArgumentException(
-                    "Trạng thái không được để trống");
-        }
+	@Override
+	public TaskResponse updateStatus(Long taskId, String status) {
 
-        TaskStatus taskStatus;
+		User currentUser = getCurrentUser();
 
-        try {
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-            taskStatus =
-                    TaskStatus.valueOf(
-                            status.trim().toUpperCase());
+		checkProjectManagerOrAssignee(task, currentUser);
 
-        } catch (IllegalArgumentException e) {
+		checkProjectAllowsTaskProgress(task.getProject());
 
-            throw new IllegalArgumentException(
-                    "Trạng thái không hợp lệ: "
-                            + status);
-        }
+		TaskStatus newStatus = parseStatusRequired(status);
 
-        task.setStatus(taskStatus);
+		validateStatusTransition(task.getStatus(), newStatus);
 
-        // DONE = 100%
-        if (taskStatus == TaskStatus.DONE) {
-            task.setProgressPercent(100);
-        }
+		task.setStatus(newStatus);
 
-        // NOT_STARTED = 0%
-        if (taskStatus == TaskStatus.NOT_STARTED) {
-            task.setProgressPercent(0);
-        }
+		if (newStatus == TaskStatus.DONE) {
+			task.setProgressPercent(100);
+		}
 
-        Task savedTask =
-                taskRepository.save(task);
+		if (newStatus == TaskStatus.NOT_STARTED) {
+			task.setProgressPercent(0);
+		}
 
-        return toTaskResponse(savedTask);
-    }
+		Task savedTask = taskRepository.save(task);
 
-    // =====================================================
-    // UPDATE PROGRESS
-    // =====================================================
+		milestoneService.recalculateByTask(task.getId());
 
-    @Override
-    public TaskResponse updateProgress(
-            Long taskId,
-            Integer progress) {
+		return toTaskResponse(savedTask);
+	}
 
-        User currentUser = getCurrentUser();
+	@Override
+	public TaskResponse updateProgress(Long taskId, Integer progress) {
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		User currentUser = getCurrentUser();
 
-        checkProjectManagerOrAssignee(
-                task,
-                currentUser);
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        if (progress == null) {
+		checkProjectManagerOrAssignee(task, currentUser);
 
-            throw new IllegalArgumentException(
-                    "Tiến độ không được để trống");
-        }
+		checkProjectAllowsTaskProgress(task.getProject());
 
-        if (progress < 0 ||
-                progress > 100) {
+		if (progress == null) {
+			throw new IllegalArgumentException("Tiến độ không được để trống");
+		}
 
-            throw new IllegalArgumentException(
-                    "Tiến độ phải nằm trong khoảng 0 - 100%");
-        }
+		if (progress < 0 || progress > 100) {
+			throw new IllegalArgumentException("Tiến độ phải từ 0 đến 100%");
+		}
 
-        task.setProgressPercent(progress);
+		task.setProgressPercent(progress);
 
-        // =================================================
-        // AUTO STATUS
-        // =================================================
+		if (progress == 100) {
 
-        if (progress == 100) {
+			task.setStatus(TaskStatus.DONE);
 
-            task.setStatus(
-                    TaskStatus.DONE);
+		} else if (progress > 0) {
 
-        } else if (progress > 0) {
+			task.setStatus(TaskStatus.IN_PROGRESS);
 
-            task.setStatus(
-                    TaskStatus.IN_PROGRESS);
+		} else {
+			task.setStatus(TaskStatus.NOT_STARTED);
+		}
 
-        } else {
+		Task savedTask = taskRepository.save(task);
 
-            task.setStatus(
-                    TaskStatus.NOT_STARTED);
-        }
+		milestoneService.recalculateByTask(task.getId());
 
-        Task savedTask =
-                taskRepository.save(task);
+		return toTaskResponse(savedTask);
+	}
 
-        return toTaskResponse(savedTask);
-    }
+	@Override
+	public TaskResponse updateAssignees(Long taskId, UpdateAssigneesRequest request) {
 
-    // =====================================================
-    // UPDATE ASSIGNEES
-    // =====================================================
+		User currentUser = getCurrentUser();
 
-    @Override
-    public TaskResponse updateAssignees(
-            Long taskId,
-            UpdateAssigneesRequest request) {
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        User currentUser = getCurrentUser();
+		checkProjectManager(task, currentUser);
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		checkProjectAllowsTaskManagement(task.getProject());
 
-        checkProjectManager(
-                task,
-                currentUser);
+		if (request == null || request.getAssigneeIds() == null || request.getAssigneeIds().isEmpty()) {
 
-        List<Long> ids =
-                new ArrayList<>();
+			throw new IllegalArgumentException("Phải phân công ít nhất một thành viên");
+		}
 
-        if (request != null &&
-                request.getAssigneeIds() != null) {
+		List<Long> ids = normalizeIds(request.getAssigneeIds());
 
-            ids = request.getAssigneeIds();
-        }
+		validateAssignees(task.getProject().getId(), ids);
 
-        List<User> users =
-                userRepository.findAllById(ids);
+		List<User> users = userRepository.findAllById(ids);
 
-        task.setAssignees(
-                new HashSet<>(users));
+		if (users.size() != ids.size()) {
+			throw new IllegalArgumentException("Một hoặc nhiều người thực hiện không tồn tại");
+		}
 
-        Task savedTask =
-                taskRepository.save(task);
+		task.setAssignees(new HashSet<>(users));
 
-        return toTaskResponse(savedTask);
-    }
+		Task savedTask = taskRepository.save(task);
 
-    // =====================================================
-    // ADD COMMENT
-    // =====================================================
+		return toTaskResponse(savedTask);
+	}
 
-    @Override
-    public TaskCommentResponse addComment(
-            Long taskId,
-            CommentRequest request) {
+	@Override
+	public TaskCommentResponse addComment(Long taskId, CommentRequest request) {
 
-        User currentUser = getCurrentUser();
+		User currentUser = getCurrentUser();
 
-        Task task =
-                taskRepository.findById(taskId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Không tìm thấy công việc"));
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        checkProjectManagerOrAssignee(
-                task,
-                currentUser);
+		checkProjectManagerOrAssignee(task, currentUser);
+		checkProjectAllowsTaskProgress(task.getProject());
 
-        if (request == null ||
-                request.getContent() == null ||
-                request.getContent().isBlank()) {
+		if (request == null || request.getContent() == null || request.getContent().isBlank()) {
+			throw new IllegalArgumentException("Nội dung trao đổi không được để trống");
+		}
 
-            throw new IllegalArgumentException(
-                    "Nội dung ghi chú không được để trống");
-        }
+		TaskComment comment = TaskComment.builder().task(task).author(currentUser).content(request.getContent().trim())
+				.build();
 
-        /*
-         * Phần Comment cần Entity TaskComment
-         * và CommentRepository.
-         */
+		TaskComment savedComment = taskCommentRepository.save(comment);
 
-        throw new UnsupportedOperationException(
-                "Chưa cấu hình Entity TaskComment");
-    }
+		return TaskCommentResponse.builder().id(savedComment.getId()).content(savedComment.getContent())
+				.userId(currentUser.getId()).userName(currentUser.getFullName()).createdAt(savedComment.getCreatedAt())
+				.build();
+	}
 
-    // =====================================================
-    // GET COMMENTS
-    // =====================================================
+	@Override
+	public List<TaskCommentResponse> getComments(Long taskId) {
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<TaskCommentResponse> getComments(
-            Long taskId) {
+		taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
 
-        if (taskId == null) {
+		return taskCommentRepository.findByTaskIdOrderByCreatedAtAsc(taskId).stream()
+				.map(comment -> TaskCommentResponse.builder().id(comment.getId()).content(comment.getContent())
+						.userId(comment.getAuthor().getId()).userName(comment.getAuthor().getFullName())
+						.createdAt(comment.getCreatedAt()).build())
+				.toList();
+	}
 
-            throw new IllegalArgumentException(
-                    "Task ID không được để trống");
-        }
+	@Override
+	@Transactional(readOnly = true)
+	public TaskPageResponse getMyTasks(int page, int size, String keyword, String status, String priority,
+			String sortBy, String direction) {
 
-        taskRepository.findById(taskId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Không tìm thấy công việc"));
+		User currentUser = getCurrentUser();
 
-        /*
-         * Phần Comment cần Entity TaskComment
-         * và CommentRepository.
-         */
+		if (page < 0) {
+			page = 0;
+		}
 
-        return List.of();
-    }
+		if (size < 1) {
+			size = 10;
+		}
 
-    // =====================================================
-    // GET CURRENT USER
-    // =====================================================
-    //
-    // FIX LỖI:
-    // "Không tìm thấy tài khoản"
-    //
-    // Ưu tiên:
-    // 1. authentication.getName() = email
-    // 2. fallback tìm fullName để hỗ trợ token cũ
-    // =====================================================
+		if (size > 100) {
+			size = 100;
+		}
 
-   private User getCurrentUser() {
+		String sortField = switch (sortBy) {
+		case "title" -> "title";
+		case "status" -> "status";
+		case "priority" -> "priority";
+		case "progressPercent" -> "progressPercent";
+		case "createdAt" -> "createdAt";
+		case "deadline" -> "deadline";
+		default -> "deadline";
+		};
 
-    Authentication authentication =
-            SecurityContextHolder
-                    .getContext()
-                    .getAuthentication();
+		Sort.Direction sortDirection = "desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC;
 
-    if (authentication == null ||
-            !authentication.isAuthenticated()) {
+		Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sortField));
 
-        throw new RuntimeException(
-                "Bạn chưa đăng nhập");
-    }
+		TaskStatus taskStatus = null;
+		TaskPriority taskPriority = null;
 
-    Object principal = authentication.getPrincipal();
+		if (status != null && !status.isBlank()) {
+			taskStatus = TaskStatus.valueOf(status.toUpperCase());
+		}
 
-    // =================================================
-    // 1. PRINCIPAL LÀ ENTITY User
-    // =================================================
+		if (priority != null && !priority.isBlank()) {
+			taskPriority = TaskPriority.valueOf(priority.toUpperCase());
+		}
 
-    if (principal instanceof User) {
-        return (User) principal;
-    }
+		Page<Task> taskPage = taskRepository.findMyTasks(currentUser.getId(), normalize(keyword), taskStatus,
+				taskPriority, pageable);
 
-    // =================================================
-    // 2. PRINCIPAL LÀ SPRING USER DETAILS
-    // =================================================
+		List<TaskResponse> content = taskPage.getContent().stream().map(this::toTaskResponse).toList();
 
-    if (principal instanceof org.springframework.security.core.userdetails.User) {
+		TaskStatisticsResponse statistics = buildMyTaskStatistics(currentUser.getId());
 
-        String email =
-                ((org.springframework.security.core.userdetails.User)
-                        principal)
-                        .getUsername();
+		return TaskPageResponse.builder().content(content).page(taskPage.getNumber()).size(taskPage.getSize())
+				.totalElements(taskPage.getTotalElements()).totalPages(taskPage.getTotalPages()).statistics(statistics)
+				.build();
+	}
 
-        if (email == null || email.isBlank()) {
-            throw new RuntimeException(
-                    "Không xác định được email người dùng");
-        }
+	@Override
+	@Transactional(readOnly = true)
+	public List<TaskResponse> getMyTasksFromProject(Long projectId) {
 
-        return userRepository
-                .findByEmail(email.trim())
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Không tìm thấy tài khoản: " + email));
-    }
+		User currentUser = getCurrentUser();
 
-    // =================================================
-    // 3. PRINCIPAL LÀ STRING
-    // =================================================
+		Project project = projectRepository.findById(projectId)
+				.orElseThrow(() -> new RuntimeException("Không tìm thấy dự án"));
 
-    if (principal instanceof String) {
+		checkProjectAccess(project, currentUser);
 
-        String username =
-                ((String) principal).trim();
+		List<Task> tasks = taskRepository.findMyTasksFromProject(currentUser.getId(), projectId);
 
-        if (username.isBlank()) {
-            throw new RuntimeException(
-                    "Không xác định được người dùng hiện tại");
-        }
+		return tasks.stream().map(this::toTaskResponse).collect(Collectors.toList());
+	}
 
-        // Tìm theo email trước
-        User user =
-                userRepository
-                        .findByEmail(username)
-                        .orElse(null);
+	private TaskStatisticsResponse buildMyTaskStatistics(Long userId) {
 
-        if (user != null) {
-            return user;
-        }
+		long total = taskRepository.countMyTasks(userId);
 
-        // Fallback tìm theo full name
-        user =
-                userRepository
-                        .findByFullName(username)
-                        .orElse(null);
+		long notStarted = taskRepository.countMyTasksByStatus(userId, TaskStatus.NOT_STARTED);
 
-        if (user != null) {
-            return user;
-        }
+		long inProgress = taskRepository.countMyTasksByStatus(userId, TaskStatus.IN_PROGRESS);
 
-        throw new RuntimeException(
-                "Không tìm thấy tài khoản: " + username);
-    }
+		long pending = taskRepository.countMyTasksByStatus(userId, TaskStatus.PENDING);
 
-    // =================================================
-    // 4. KHÔNG XÁC ĐỊNH ĐƯỢC PRINCIPAL
-    // =================================================
+		long done = taskRepository.countMyTasksByStatus(userId, TaskStatus.DONE);
 
-    throw new RuntimeException(
-            "Không xác định được người dùng hiện tại. Principal: "
-                    + principal);
-}
-    // =====================================================
-    // CHECK PROJECT MANAGER
-    // =====================================================
+		long cancelled = taskRepository.countMyTasksByStatus(userId, TaskStatus.CANCELLED);
 
-    private void checkProjectManager(
-            Task task,
-            User currentUser) {
+		long unfinished = taskRepository.countMyUnfinishedTasks(userId, List.of(TaskStatus.DONE, TaskStatus.CANCELLED));
 
-        if (task.getProject() == null) {
+		Double averageProgress = taskRepository.calculateMyAverageProgress(userId);
 
-            throw new RuntimeException(
-                    "Công việc chưa thuộc dự án");
-        }
+		double totalProgress = averageProgress == null ? 0 : Math.round(averageProgress * 10.0) / 10.0;
 
-        if (task.getProject()
-                .getProjectManager() == null) {
+		return TaskStatisticsResponse.builder().total(total).completed(done).todo(notStarted).notStarted(notStarted)
+				.inProgress(inProgress).pending(pending).done(done).cancelled(cancelled).unfinished(unfinished)
+				.totalProgress(totalProgress).build();
+	}
 
-            throw new RuntimeException(
-                    "Dự án chưa có quản lý dự án");
-        }
+	private TaskStatisticsResponse buildStatistics(Long projectId) {
 
-        Long managerId =
-                task.getProject()
-                        .getProjectManager()
-                        .getId();
+		long total = taskRepository.countByProjectId(projectId);
 
-        boolean isProjectManager =
-                managerId.equals(
-                        currentUser.getId());
+		long completed = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.DONE);
 
-        boolean isAdmin =
-                currentUser.getRole() != null
-                        && currentUser.getRole()
-                                .name()
-                                .equalsIgnoreCase("ADMIN");
+		long todo = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.NOT_STARTED);
 
-        if (!isProjectManager &&
-                !isAdmin) {
+		long notStarted = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.NOT_STARTED);
 
-            throw new RuntimeException(
-                    "Bạn không có quyền quản lý công việc này");
-        }
-    }
+		long inProgress = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.IN_PROGRESS);
 
-    // =====================================================
-    // CHECK PROJECT MANAGER OR ASSIGNEE
-    // =====================================================
+		long pending = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.PENDING);
 
-    private void checkProjectManagerOrAssignee(
-            Task task,
-            User currentUser) {
+		long done = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.DONE);
 
-        // =================================================
-        // ADMIN
-        // =================================================
+		long cancelled = taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.CANCELLED);
 
-        boolean isAdmin =
-                currentUser.getRole() != null
-                        && currentUser.getRole()
-                                .name()
-                                .equalsIgnoreCase("ADMIN");
+		long unfinished = taskRepository.countUnfinishedTasks(projectId,
+				List.of(TaskStatus.DONE, TaskStatus.CANCELLED));
 
-        if (isAdmin) {
-            return;
-        }
+		Double averageProgress = taskRepository.calculateAverageProgress(projectId);
 
-        // =================================================
-        // PROJECT MANAGER
-        // =================================================
+		double totalProgress = averageProgress == null ? 0 : Math.round(averageProgress * 10.0) / 10.0;
 
-        if (task.getProject() != null &&
-                task.getProject()
-                        .getProjectManager() != null) {
+		return TaskStatisticsResponse.builder().total(total).completed(completed).todo(todo).notStarted(notStarted)
+				.inProgress(inProgress).pending(pending).done(done).cancelled(cancelled).unfinished(unfinished)
+				.totalProgress(totalProgress).build();
+	}
 
-            Long managerId =
-                    task.getProject()
-                            .getProjectManager()
-                            .getId();
+	private void validateDeadline(LocalDateTime deadline, Project project) {
 
-            if (managerId.equals(
-                    currentUser.getId())) {
+		if (deadline == null) {
+			throw new IllegalArgumentException("Deadline không được để trống");
+		}
 
-                return;
-            }
-        }
+		LocalDateTime now = LocalDateTime.now();
 
-        // =================================================
-        // ASSIGNEE
-        // =================================================
+		if (!deadline.isAfter(now)) {
+			throw new IllegalArgumentException("Deadline phải sau thời điểm hiện tại");
+		}
 
-        boolean assigned =
-                task.getAssignees()
-                        .stream()
-                        .anyMatch(user ->
-                                user.getId()
-                                        .equals(
-                                                currentUser.getId()));
+		if (project == null) {
+			throw new IllegalArgumentException("Công việc chưa thuộc dự án");
+		}
 
-        if (!assigned) {
+		LocalDate startDate = project.getStartDate();
 
-            throw new RuntimeException(
-                    "Bạn không có quyền cập nhật công việc này");
-        }
-    }
+		LocalDate endDate = project.getEndDate();
 
-    // =====================================================
-    // ENTITY -> RESPONSE
-    // =====================================================
+		if (startDate == null || endDate == null) {
 
-    private TaskResponse toTaskResponse(
-            Task task) {
+			throw new IllegalArgumentException("Dự án chưa có đầy đủ ngày bắt đầu và kết thúc");
+		}
 
-        List<TaskResponse.AssigneeResponse>
-                assignees =
-                task.getAssignees()
-                        .stream()
-                        .map(user ->
-                                TaskResponse
-                                        .AssigneeResponse
-                                        .builder()
-                                        .id(user.getId())
-                                        .fullName(
-                                                user.getFullName())
-                                        .email(
-                                                user.getEmail())
-                                        .build())
-                        .toList();
+		LocalDateTime minProjectDeadline = startDate.atStartOfDay();
 
-        return TaskResponse.builder()
+		LocalDateTime maxProjectDeadline = endDate.atTime(LocalTime.MAX);
 
-                .id(task.getId())
+		if (deadline.isBefore(minProjectDeadline)) {
 
-                .name(task.getTitle())
+			throw new IllegalArgumentException("Deadline không được trước ngày bắt đầu dự án");
+		}
 
-                .description(
-                        task.getDescription())
+		if (deadline.isAfter(maxProjectDeadline)) {
 
-                .deadline(
-                        task.getDeadline())
+			throw new IllegalArgumentException("Deadline không được sau ngày kết thúc dự án");
+		}
+	}
 
-                .priority(
-                        task.getPriority() != null
-                                ? task.getPriority().name()
-                                : null)
+	private void validateAssignees(Long projectId, List<Long> assigneeIds) {
 
-                .status(
-                        task.getStatus() != null
-                                ? task.getStatus().name()
-                                : null)
+		if (assigneeIds == null || assigneeIds.isEmpty()) {
 
-                .progressPercent(
-                        task.getProgressPercent())
+			throw new IllegalArgumentException("Phải phân công ít nhất một thành viên");
+		}
 
-                .projectId(
-                        task.getProject() != null
-                                ? task.getProject().getId()
-                                : null)
+		for (Long userId : assigneeIds) {
 
-                .projectName(
-                        task.getProject() != null
-                                ? task.getProject().getName()
-                                : null)
+			if (userId == null) {
+				throw new IllegalArgumentException("User ID không hợp lệ");
+			}
 
-                .assignees(assignees)
+			boolean exists = projectMemberRepository.existsActiveMember(projectId, userId);
 
-                .build();
-    }
+			if (!exists) {
+				throw new IllegalArgumentException(
+						"Người được phân công không phải thành viên ACTIVE của dự án: " + userId);
+			}
+		}
+	}
+
+	private List<Long> normalizeIds(List<Long> ids) {
+
+		if (ids == null) {
+			return new ArrayList<>();
+		}
+
+		return ids.stream().filter(id -> id != null).distinct().toList();
+	}
+
+	private TaskStatus parseStatus(String status) {
+
+		if (status == null || status.isBlank()) {
+
+			return null;
+		}
+
+		try {
+			return TaskStatus.valueOf(status.trim().toUpperCase());
+
+		} catch (IllegalArgumentException e) {
+
+			throw new IllegalArgumentException("Trạng thái không hợp lệ: " + status);
+		}
+	}
+
+	private TaskStatus parseStatusRequired(String status) {
+
+		if (status == null || status.isBlank()) {
+
+			throw new IllegalArgumentException("Trạng thái không được để trống");
+		}
+
+		return parseStatus(status);
+	}
+
+	private TaskPriority parsePriority(String priority) {
+
+		if (priority == null || priority.isBlank()) {
+
+			return null;
+		}
+
+		try {
+			return TaskPriority.valueOf(priority.trim().toUpperCase());
+
+		} catch (IllegalArgumentException e) {
+
+			throw new IllegalArgumentException("Độ ưu tiên không hợp lệ: " + priority);
+		}
+	}
+
+	private TaskPriority parsePriorityRequired(String priority) {
+
+		TaskPriority result = parsePriority(priority);
+
+		if (result == null) {
+			throw new IllegalArgumentException("Độ ưu tiên không được để trống");
+		}
+
+		return result;
+	}
+
+	// CHANGED: chỉ cho phép chuyển trạng thái theo workflow
+	private void validateStatusTransition(TaskStatus current, TaskStatus next) {
+
+		if (current == null) {
+			return;
+		}
+
+		if (current == next) {
+			return;
+		}
+
+		boolean allowed = switch (current) {
+
+		case NOT_STARTED -> next == TaskStatus.IN_PROGRESS || next == TaskStatus.CANCELLED;
+
+		case IN_PROGRESS -> next == TaskStatus.PENDING || next == TaskStatus.DONE || next == TaskStatus.CANCELLED;
+
+		case PENDING -> next == TaskStatus.IN_PROGRESS || next == TaskStatus.CANCELLED;
+
+		case DONE -> false;
+
+		case CANCELLED -> false;
+		};
+
+		if (!allowed) {
+			throw new IllegalArgumentException(
+					"Không thể chuyển trạng thái từ " + current.name() + " sang " + next.name());
+		}
+	}
+
+	private Sort buildSort(String sortBy, String direction) {
+
+		String field;
+
+		if (sortBy == null || sortBy.isBlank()) {
+
+			field = "deadline";
+
+		} else {
+
+			field = switch (sortBy.trim().toLowerCase()) {
+
+			case "name" -> "title";
+
+			case "title" -> "title";
+
+			case "deadline" -> "deadline";
+
+			case "priority" -> "priority";
+
+			case "status" -> "status";
+
+			default -> "deadline";
+			};
+		}
+
+		Sort.Direction sortDirection = "desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC;
+
+		return Sort.by(sortDirection, field);
+	}
+
+	private void checkProjectAccess(Project project, User currentUser) {
+
+		if (project == null) {
+			throw new RuntimeException("Không tìm thấy dự án");
+		}
+
+		boolean isAdmin = isAdmin(currentUser);
+
+		boolean isManager = project.getProjectManager() != null
+				&& project.getProjectManager().getId().equals(currentUser.getId());
+
+		boolean isMember = projectMemberRepository.existsActiveMember(project.getId(), currentUser.getId());
+
+		if (!isAdmin && !isManager && !isMember) {
+
+			throw new RuntimeException("Bạn không có quyền xem công việc của dự án này");
+		}
+	}
+
+	private void checkProjectManager(Task task, User currentUser) {
+
+		if (task == null || task.getProject() == null) {
+
+			throw new RuntimeException("Công việc chưa thuộc dự án");
+		}
+
+		checkProjectManager(task.getProject(), currentUser);
+	}
+
+	private void checkProjectManager(Project project, User currentUser) {
+
+		if (project.getProjectManager() == null) {
+			throw new RuntimeException("Dự án chưa có quản lý dự án");
+		}
+
+		boolean manager = project.getProjectManager().getId().equals(currentUser.getId());
+
+		if (!manager && !isAdmin(currentUser)) {
+
+			throw new RuntimeException("Bạn không có quyền quản lý công việc này");
+		}
+	}
+
+	private void checkProjectManagerOrAssignee(Task task, User currentUser) {
+
+		if (isAdmin(currentUser)) {
+			return;
+		}
+
+		if (task.getProject() != null && task.getProject().getProjectManager() != null
+				&& task.getProject().getProjectManager().getId().equals(currentUser.getId())) {
+
+			return;
+		}
+
+		if (task.getAssignees() != null
+				&& task.getAssignees().stream().anyMatch(user -> user.getId().equals(currentUser.getId()))) {
+
+			return;
+		}
+
+		throw new RuntimeException("Bạn không có quyền cập nhật công việc này");
+	}
+
+	private void checkProjectAllowsTaskManagement(Project project) {
+
+		if (project == null) {
+			throw new RuntimeException("Công việc chưa thuộc dự án");
+		}
+
+		String status = project.getStatus() == null ? "" : project.getStatus().name();
+
+		if ("CLOSED".equals(status)) {
+			throw new RuntimeException("Dự án đã đóng, không thể thay đổi công việc");
+		}
+
+		if ("CANCELLED".equals(status)) {
+			throw new RuntimeException("Dự án đã hủy, không thể thay đổi công việc");
+		}
+	}
+
+	private void checkProjectAllowsTaskProgress(Project project) {
+
+		checkProjectAllowsTaskManagement(project);
+	}
+
+	private boolean isAdmin(User user) {
+
+		return user != null && user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole().name());
+	}
+
+	private User getCurrentUser() {
+
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+		if (authentication == null || !authentication.isAuthenticated()) {
+
+			throw new RuntimeException("Bạn chưa đăng nhập");
+		}
+
+		Object principal = authentication.getPrincipal();
+
+		if (principal instanceof User) {
+			return (User) principal;
+		}
+
+		if (principal instanceof org.springframework.security.core.userdetails.User) {
+
+			String email = ((org.springframework.security.core.userdetails.User) principal).getUsername();
+
+			return userRepository.findByEmail(email.trim())
+					.orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản: " + email));
+		}
+
+		if (principal instanceof String) {
+
+			String username = principal.toString().trim();
+
+			User user = userRepository.findByEmail(username).orElse(null);
+
+			if (user != null) {
+				return user;
+			}
+
+			user = userRepository.findByFullName(username).orElse(null);
+
+			if (user != null) {
+				return user;
+			}
+
+			throw new RuntimeException("Không tìm thấy tài khoản: " + username);
+		}
+
+		throw new RuntimeException("Không xác định được người dùng hiện tại");
+	}
+
+	private TaskResponse toTaskResponse(Task task) {
+
+		List<TaskResponse.AssigneeResponse> assignees = task.getAssignees().stream()
+				.map(user -> TaskResponse.AssigneeResponse.builder().id(user.getId()).fullName(user.getFullName())
+						.email(user.getEmail()).build())
+				.toList();
+
+		return TaskResponse.builder()
+
+				.id(task.getId())
+
+				.name(task.getTitle())
+
+				.description(task.getDescription())
+
+				.deadline(task.getDeadline())
+
+				.priority(task.getPriority() != null ? task.getPriority().name() : null)
+
+				.status(task.getStatus() != null ? task.getStatus().name() : null)
+
+				.progressPercent(task.getProgressPercent())
+
+				.projectId(task.getProject() != null ? task.getProject().getId() : null)
+
+				.projectName(task.getProject() != null ? task.getProject().getName() : null)
+
+				.assignees(assignees)
+
+				.build();
+	}
+
+	private String normalize(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+
+		return value.trim();
+	}
+
+	@Override
+	public TaskResponse findTaskById(Long taskId) {
+		User currentUser = getCurrentUser();
+
+		Task task = taskRepository.findById(taskId).orElseThrow(() -> new RuntimeException("Không tìm thấy công việc"));
+
+		checkProjectManagerOrAssignee(task, currentUser);
+		return toTaskResponse(task);
+	}
+
 }

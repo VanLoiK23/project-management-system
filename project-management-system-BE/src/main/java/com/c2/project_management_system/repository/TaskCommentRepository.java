@@ -12,4 +12,6 @@ import com.c2.project_management_system.entity.TaskComment;
 public interface TaskCommentRepository extends JpaRepository<TaskComment, Long> {
 
     List<TaskComment> findByTaskOrderByCreatedAtAsc(Task task);
+    
+    List<TaskComment> findByTaskIdOrderByCreatedAtAsc(Long taskId);
 }

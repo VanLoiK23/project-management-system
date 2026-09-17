@@ -33,7 +33,7 @@ export default function Header({ user, pageTitle, onLogout }) {
           </p>
         </div>
         
-        <div className="relative w-full">
+        {/* <div className="relative w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -42,7 +42,7 @@ export default function Header({ user, pageTitle, onLogout }) {
             placeholder="Tìm kiếm dự án, công việc..."
             className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-navy-500 focus:bg-white focus:ring-2 focus:ring-navy-500/20"
           />
-        </div>
+        </div> */}
       </div>
 
       <div className="flex items-center gap-4 pl-4">

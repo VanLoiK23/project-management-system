@@ -1,10 +1,11 @@
 package com.c2.project_management_system.service.impl;
 
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,139 +15,325 @@ import com.c2.project_management_system.dto.respone.MilestoneResponse;
 import com.c2.project_management_system.entity.Milestone;
 import com.c2.project_management_system.entity.Project;
 import com.c2.project_management_system.entity.Task;
-import com.c2.project_management_system.exception.InvalidOperationException;
-import com.c2.project_management_system.exception.ResourceNotFoundException;
 import com.c2.project_management_system.repository.MilestoneRepository;
+import com.c2.project_management_system.repository.ProjectMemberRepository;
 import com.c2.project_management_system.repository.ProjectRepository;
 import com.c2.project_management_system.repository.TaskRepository;
+import com.c2.project_management_system.repository.UserRepository;
 import com.c2.project_management_system.service.MilestoneService;
+import com.c2.project_management_system.statusEnum.ProjectStatus;
+import com.c2.project_management_system.statusEnum.TaskStatus;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
-/**
- * Trien khai nghiep vu Module 6 - Quan ly lich trinh (Milestone/Sprint).
- *
- * Business rule bam sat tai lieu:
- * - Them lich trinh: kiem tra khong trung/chong cheo thoi gian voi
- *   lich trinh khac trong CUNG du an.
- * - Day la moc/milestone cap du an, khac voi Deadline cua tung cong viec.
- */
-@Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class MilestoneServiceImpl implements MilestoneService {
 
-    private final MilestoneRepository milestoneRepository;
-    private final ProjectRepository projectRepository;
-    private final TaskRepository taskRepository;
+	private final MilestoneRepository milestoneRepository;
+	private final ProjectRepository projectRepository;
+	private final ProjectMemberRepository projectMemberRepository;
+	private final TaskRepository taskRepository;
+	private final UserRepository userRepository;
 
-    @Override
-    @Transactional
-    public MilestoneResponse createMilestone(Long currentUserId, MilestoneCreateRequest request) {
-        Project project = projectRepository.findById(request.getProjectId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy dự án id=" + request.getProjectId()));
+	@Override
+	public MilestoneResponse createMilestone(Long currentUserId, MilestoneCreateRequest request) {
 
-        validateDateRange(request.getStartDate(), request.getEndDate());
-        checkOverlap(project, request.getStartDate(), request.getEndDate(), null);
+		Project project = getProject(request.getProjectId());
 
-        Milestone milestone = Milestone.builder()
-                .name(request.getName())
-                .startDate(request.getStartDate())
-                .endDate(request.getEndDate())
-                .project(project)
-                .tasks(resolveTasks(request.getTaskIds()))
-                .build();
+		checkCanManageMilestone(project, currentUserId, false);
 
-        Milestone saved = milestoneRepository.save(milestone);
-        log.info("Đã tạo lịch trình '{}' (id={}) cho dự án id={} bởi user id={}",
-                saved.getName(), saved.getId(), project.getId(), currentUserId);
-        return toResponse(saved);
-    }
+		validateDates(request.getStartDate(), request.getEndDate());
 
-    @Override
-    @Transactional
-    public MilestoneResponse updateMilestone(Long milestoneId, MilestoneUpdateRequest request) {
-        Milestone milestone = getMilestoneOrThrow(milestoneId);
+		validateProjectDateRange(project, request.getStartDate(), request.getEndDate());
 
-        validateDateRange(request.getStartDate(), request.getEndDate());
-        checkOverlap(milestone.getProject(), request.getStartDate(), request.getEndDate(), milestoneId);
+		String name = request.getName().trim();
 
-        milestone.setName(request.getName());
-        milestone.setStartDate(request.getStartDate());
-        milestone.setEndDate(request.getEndDate());
-        if (request.getTaskIds() != null) {
-            milestone.setTasks(resolveTasks(request.getTaskIds()));
-        }
+		if (milestoneRepository.existsByProjectIdAndNameIgnoreCase(project.getId(), name)) {
 
-        return toResponse(milestoneRepository.save(milestone));
-    }
+			throw new IllegalArgumentException("Milestone đã tồn tại trong dự án");
+		}
 
-    @Override
-    @Transactional
-    public void deleteMilestone(Long milestoneId) {
-        Milestone milestone = getMilestoneOrThrow(milestoneId);
-        milestoneRepository.delete(milestone);
-    }
+		validateNoOverlap(project.getId(), request.getStartDate(), request.getEndDate(), null);
 
-    @Override
-    public MilestoneResponse getMilestoneById(Long milestoneId) {
-        return toResponse(getMilestoneOrThrow(milestoneId));
-    }
+		Set<Task> tasks = loadAndValidateTasks(project, request.getTaskIds());
 
-    @Override
-    public List<MilestoneResponse> getMilestonesByProject(Long projectId) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy dự án id=" + projectId));
-        return milestoneRepository.findByProject(project).stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
-    }
+		Milestone milestone = Milestone.builder().name(name).startDate(request.getStartDate())
+				.endDate(request.getEndDate()).project(project).tasks(tasks).progressPercent(0).build();
 
-    private void validateDateRange(java.time.LocalDate start, java.time.LocalDate end) {
-        if (start.isAfter(end)) {
-            throw new InvalidOperationException("Ngày bắt đầu phải trước ngày kết thúc");
-        }
-    }
+		milestoneRepository.save(milestone);
 
-    // Kiem tra trung/chong cheo thoi gian voi lich trinh khac trong cung du an
-    private void checkOverlap(Project project, java.time.LocalDate start, java.time.LocalDate end, Long excludeId) {
-        boolean overlap = milestoneRepository
-                .findByProjectAndStartDateLessThanEqualAndEndDateGreaterThanEqual(project, end, start)
-                .stream()
-                .anyMatch(m -> !m.getId().equals(excludeId));
-        if (overlap) {
-            throw new InvalidOperationException("Khoảng thời gian bị trùng/chồng chéo với một lịch trình khác trong dự án này");
-        }
-    }
+		recalculateProgress(milestone);
 
-    private Set<Task> resolveTasks(List<Long> taskIds) {
-        Set<Task> tasks = new HashSet<>();
-        if (taskIds == null) return tasks;
-        for (Long taskId : taskIds) {
-            Task task = taskRepository.findById(taskId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy công việc id=" + taskId));
-            tasks.add(task);
-        }
-        return tasks;
-    }
+		return toResponse(milestone);
+	}
 
-    private Milestone getMilestoneOrThrow(Long id) {
-        return milestoneRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lịch trình id=" + id));
-    }
+	@Override
+	public MilestoneResponse updateMilestone(Long milestoneId, Long currentUserId, MilestoneUpdateRequest request,
+			boolean isAdmin) {
 
-    private MilestoneResponse toResponse(Milestone m) {
-        return MilestoneResponse.builder()
-                .id(m.getId())
-                .name(m.getName())
-                .startDate(m.getStartDate())
-                .endDate(m.getEndDate())
-                .projectId(m.getProject().getId())
-                .projectName(m.getProject().getName())
-                .taskIds(m.getTasks().stream().map(Task::getId).collect(Collectors.toList()))
-                .createdAt(m.getCreatedAt())
-                .updatedAt(m.getUpdatedAt())
-                .build();
-    }
+		Milestone milestone = getMilestone(milestoneId);
+
+		Project project = milestone.getProject();
+
+		checkCanManageMilestone(project, currentUserId, isAdmin);
+
+		checkProjectEditable(project);
+
+		validateDates(request.getStartDate(), request.getEndDate());
+
+		validateProjectDateRange(project, request.getStartDate(), request.getEndDate());
+
+		String name = request.getName().trim();
+
+		if (milestoneRepository.existsByProjectIdAndNameIgnoreCaseAndIdNot(project.getId(), name, milestoneId)) {
+
+			throw new IllegalArgumentException("Milestone đã tồn tại trong dự án");
+		}
+
+		validateNoOverlap(project.getId(), request.getStartDate(), request.getEndDate(), milestoneId);
+
+		Set<Task> tasks = loadAndValidateTasks(project, request.getTaskIds());
+
+		milestone.setName(name);
+		milestone.setStartDate(request.getStartDate());
+		milestone.setEndDate(request.getEndDate());
+		milestone.setTasks(tasks);
+
+		recalculateProgress(milestone);
+
+		milestoneRepository.save(milestone);
+
+		return toResponse(milestone);
+	}
+
+	@Override
+	public void deleteMilestone(Long milestoneId, Long currentUserId, boolean isAdmin) {
+
+		Milestone milestone = getMilestone(milestoneId);
+
+		Project project = milestone.getProject();
+
+		checkCanManageMilestone(project, currentUserId, isAdmin);
+
+		checkProjectEditable(project);
+
+		milestone.getTasks().clear();
+
+		milestoneRepository.delete(milestone);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public MilestoneResponse getMilestoneById(Long milestoneId, Long currentUserId, boolean isAdmin) {
+
+		Milestone milestone = getMilestone(milestoneId);
+
+		checkCanViewProject(milestone.getProject(), currentUserId, isAdmin);
+
+		recalculateProgress(milestone);
+
+		return toResponse(milestone);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<MilestoneResponse> getMilestonesByProject(Long projectId, Long currentUserId, boolean isAdmin) {
+
+		Project project = getProject(projectId);
+
+		checkCanViewProject(project, currentUserId, isAdmin);
+
+		List<Milestone> milestones = milestoneRepository.findByProjectIdOrderByStartDateAsc(projectId);
+
+		milestones.forEach(this::recalculateProgress);
+
+		return milestones.stream().map(this::toResponse).toList();
+	}
+
+	@Override
+	public void recalculateByTask(Long taskId) {
+
+		List<Milestone> milestones = milestoneRepository.findDistinctByTaskId(taskId);
+
+		for (Milestone milestone : milestones) {
+			recalculateProgress(milestone);
+		}
+	}
+
+	@Override
+	public void recalculateMilestones(Set<Milestone> milestones) {
+
+		if (milestones == null || milestones.isEmpty()) {
+			return;
+		}
+
+		for (Milestone milestone : milestones) {
+			recalculateProgress(milestone);
+		}
+	}
+
+	private void recalculateProgress(Milestone milestone) {
+
+		Set<Task> tasks = milestone.getTasks();
+
+		if (tasks == null || tasks.isEmpty()) {
+			milestone.setProgressPercent(0);
+			return;
+		}
+
+		double average = tasks.stream()
+				.mapToInt(task -> task.getProgressPercent() == null ? 0 : task.getProgressPercent()).average()
+				.orElse(0);
+
+		int progress = (int) Math.round(average);
+
+		milestone.setProgressPercent(Math.min(Math.max(progress, 0), 100));
+	}
+
+	private Set<Task> loadAndValidateTasks(Project project, Set<Long> taskIds) {
+
+		if (taskIds == null || taskIds.isEmpty()) {
+			return new HashSet<>();
+		}
+
+		Set<Long> uniqueIds = new HashSet<>(taskIds);
+
+		List<Task> tasks = taskRepository.findAllById(uniqueIds);
+
+		if (tasks.size() != uniqueIds.size()) {
+			throw new IllegalArgumentException("Một hoặc nhiều công việc không tồn tại");
+		}
+
+		boolean invalidProject = tasks.stream().anyMatch(task -> !task.getProject().getId().equals(project.getId()));
+
+		if (invalidProject) {
+			throw new IllegalArgumentException("Không thể gắn công việc thuộc dự án khác vào Milestone");
+		}
+
+		return new HashSet<>(tasks);
+	}
+
+	private void validateDates(LocalDate startDate, LocalDate endDate) {
+
+		if (startDate == null || endDate == null) {
+			throw new IllegalArgumentException("Ngày bắt đầu và ngày kết thúc không được để trống");
+		}
+
+		if (startDate.isAfter(endDate)) {
+			throw new IllegalArgumentException("Ngày bắt đầu không được sau ngày kết thúc");
+		}
+	}
+
+	private void validateProjectDateRange(Project project, LocalDate startDate, LocalDate endDate) {
+
+		if (project.getStartDate() != null && startDate.isBefore(project.getStartDate())) {
+
+			throw new IllegalArgumentException("Ngày bắt đầu Milestone không được trước ngày bắt đầu dự án");
+		}
+
+		if (project.getEndDate() != null && endDate.isAfter(project.getEndDate())) {
+
+			throw new IllegalArgumentException("Ngày kết thúc Milestone không được sau ngày kết thúc dự án");
+		}
+	}
+
+	private void validateNoOverlap(Long projectId, LocalDate startDate, LocalDate endDate, Long milestoneId) {
+
+		List<Milestone> overlapping = milestoneRepository.findOverlappingMilestones(projectId, startDate, endDate,
+				milestoneId);
+
+		if (!overlapping.isEmpty()) {
+			throw new IllegalArgumentException("Khoảng thời gian Milestone bị trùng với Milestone khác trong dự án");
+		}
+	}
+
+	private void checkCanManageMilestone(Project project, Long currentUserId, boolean isAdmin) {
+
+		if (isAdmin) {
+			return;
+		}
+
+		if (project.getProjectManager() == null || !project.getProjectManager().getId().equals(currentUserId)) {
+
+			throw new AccessDeniedException("Chỉ PM hoặc Admin mới có quyền quản lý Milestone");
+		}
+	}
+
+	private void checkCanViewProject(Project project, Long currentUserId, boolean isAdmin) {
+
+		if (isAdmin) {
+			return;
+		}
+
+		if (project.getProjectManager() != null && project.getProjectManager().getId().equals(currentUserId)) {
+
+			return;
+		}
+
+		boolean isMember = projectMemberRepository.existsByProjectIdAndUserId(project.getId(), currentUserId);
+
+		if (!isMember) {
+			throw new AccessDeniedException("Bạn không có quyền xem Milestone của dự án này");
+		}
+	}
+
+	private void checkProjectEditable(Project project) {
+
+		if (project.getStatus() == ProjectStatus.CLOSED || project.getStatus() == ProjectStatus.CANCELLED) {
+
+			throw new IllegalStateException("Không thể thay đổi Milestone của dự án đã đóng hoặc đã hủy");
+		}
+	}
+
+	private Project getProject(Long projectId) {
+
+		return projectRepository.findById(projectId)
+				.orElseThrow(() -> new IllegalArgumentException("Không tìm thấy dự án"));
+	}
+
+	private Milestone getMilestone(Long milestoneId) {
+
+		return milestoneRepository.findById(milestoneId)
+				.orElseThrow(() -> new IllegalArgumentException("Không tìm thấy Milestone"));
+	}
+
+	private MilestoneResponse toResponse(Milestone milestone) {
+
+		List<Task> tasks = milestone.getTasks() == null ? List.of() : List.copyOf(milestone.getTasks());
+
+		int completedTaskCount = (int) tasks.stream().filter(task -> task.getStatus() == TaskStatus.DONE).count();
+
+		return MilestoneResponse.builder().id(milestone.getId()).name(milestone.getName())
+				.startDate(milestone.getStartDate()).endDate(milestone.getEndDate())
+				.progressPercent(milestone.getProgressPercent()).status(calculateStatus(milestone))
+				.projectId(milestone.getProject().getId()).projectName(milestone.getProject().getName())
+				.taskCount(tasks.size()).completedTaskCount(completedTaskCount)
+				.taskIds(tasks.stream().map(Task::getId).toList()).createdAt(milestone.getCreatedAt())
+				.updatedAt(milestone.getUpdatedAt()).build();
+	}
+
+	private String calculateStatus(Milestone milestone) {
+
+		Integer progress = milestone.getProgressPercent() == null ? 0 : milestone.getProgressPercent();
+
+		LocalDate today = LocalDate.now();
+
+		if (progress >= 100) {
+			return "COMPLETED";
+		}
+
+		if (today.isBefore(milestone.getStartDate())) {
+
+			return "NOT_STARTED";
+		}
+
+		if (today.isAfter(milestone.getEndDate())) {
+
+			return "OVERDUE";
+		}
+
+		return "IN_PROGRESS";
+	}
 }

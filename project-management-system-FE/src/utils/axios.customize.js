@@ -19,6 +19,13 @@ instance.interceptors.request.use(
     config.headers.Authorization = `Bearer ${localStorage.getItem(
       "access_token"
     )}`;
+
+    if (config.data instanceof FormData) {
+      delete config.headers["Content-Type"];
+    } else {
+      config.headers["Content-Type"] = "application/json";
+    }
+    
     return config;
   },
   function (error) {

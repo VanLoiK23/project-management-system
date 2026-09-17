@@ -12,4 +12,6 @@ import com.c2.project_management_system.entity.IssueAttachment;
 public interface IssueAttachmentRepository extends JpaRepository<IssueAttachment, Long> {
 
     List<IssueAttachment> findByIssue(Issue issue);
+    
+    List<IssueAttachment> findByIssueOrderByUploadedAtAsc(Issue issue);
 }

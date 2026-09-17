@@ -20,6 +20,7 @@ import {
   XCircle,
   Users,
   Save,
+  Underline,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
@@ -1114,7 +1115,7 @@ function ProjectFormModal({
                     name="startDate"
                     type="date"
                     value={form.startDate}
-                    min={today}
+                    min={!isEdit ? today : undefined}
                     onChange={onChange}
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20"
                   />
