@@ -33,6 +33,9 @@ import com.c2.project_management_system.statusEnum.ProjectStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @RestController
 @RequestMapping("/api/projects")
 @RequiredArgsConstructor
@@ -106,7 +109,11 @@ public class ProjectController {
 		boolean isAdmin = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority)
 				.anyMatch(a -> a.equals("ROLE_ADMIN"));
 
-		return ResponseEntity.ok(projectService.getProjectsForUser(currentUser.getId(), isAdmin));
+		List<ProjectResponse> result = projectService.getProjectsForUser(currentUser.getId(), isAdmin);
+		log.info(">>> GET /api/projects called by user id={}, email={}, role={}, result count={}",
+				currentUser.getId(), currentUser.getEmail(), currentUser.getRole(), result.size());
+
+		return ResponseEntity.ok(result);
 	}
 
 	@PreAuthorize("hasRole('ADMIN')")

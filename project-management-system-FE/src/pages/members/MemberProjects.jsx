@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "../../utils/axios.customize";
 import {
   Search,
@@ -156,7 +157,10 @@ function ProjectCard({ project, onView }) {
             </div>
 
             <div className="min-w-0">
-              <h3 className="truncate text-base font-bold text-slate-900">
+              <h3
+                onClick={() => onView(project)}
+                className="cursor-pointer truncate text-base font-bold text-slate-900 transition hover:text-indigo-600"
+              >
                 {project.name}
               </h3>
 
@@ -486,6 +490,7 @@ function ProjectDetailModal({ project, onClose }) {
 ========================================================= */
 
 export default function MemberProjects() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -849,7 +854,7 @@ export default function MemberProjects() {
                 <ProjectCard
                   key={project.id}
                   project={project}
-                  onView={setSelectedProject}
+                  onView={(proj) => navigate(`/member/projects/${proj.id}`)}
                 />
               ))}
             </div>
