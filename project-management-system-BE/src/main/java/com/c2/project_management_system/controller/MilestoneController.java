@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,39 +30,78 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MilestoneController {
 
-    private final MilestoneService milestoneService;
+	private final MilestoneService milestoneService;
 
-    @PostMapping
-    public ResponseEntity<MilestoneResponse> create(Authentication authentication,
-            @Valid @RequestBody MilestoneCreateRequest request) {
-        User currentUser = currentUser(authentication);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(milestoneService.createMilestone(currentUser.getId(), request));
-    }
+	@PostMapping
+	public ResponseEntity<MilestoneResponse> createMilestone(Authentication authentication,
+			@Valid @RequestBody MilestoneCreateRequest request) {
 
-    @PutMapping("/{milestoneId}")
-    public ResponseEntity<MilestoneResponse> update(@PathVariable Long milestoneId,
-            @Valid @RequestBody MilestoneUpdateRequest request) {
-        return ResponseEntity.ok(milestoneService.updateMilestone(milestoneId, request));
-    }
+		User currentUser = currentUser(authentication);
 
-    @DeleteMapping("/{milestoneId}")
-    public ResponseEntity<MessageResponse> delete(@PathVariable Long milestoneId) {
-        milestoneService.deleteMilestone(milestoneId);
-        return ResponseEntity.ok(MessageResponse.builder().message("Xóa lịch trình thành công").build());
-    }
+		MilestoneResponse response = milestoneService.createMilestone(currentUser.getId(), request);
 
-    @GetMapping("/{milestoneId}")
-    public ResponseEntity<MilestoneResponse> getById(@PathVariable Long milestoneId) {
-        return ResponseEntity.ok(milestoneService.getMilestoneById(milestoneId));
-    }
+		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
 
-    @GetMapping("/project/{projectId}")
-    public ResponseEntity<List<MilestoneResponse>> getByProject(@PathVariable Long projectId) {
-        return ResponseEntity.ok(milestoneService.getMilestonesByProject(projectId));
-    }
+	@PutMapping("/{milestoneId}")
+	public ResponseEntity<MilestoneResponse> updateMilestone(@PathVariable Long milestoneId,
+			Authentication authentication, @Valid @RequestBody MilestoneUpdateRequest request) {
 
-    private User currentUser(Authentication authentication) {
-        return (User) authentication.getPrincipal();
-    }
+		User currentUser = currentUser(authentication);
+
+		boolean isAdmin = isAdmin(authentication);
+
+		return ResponseEntity.ok(milestoneService.updateMilestone(milestoneId, currentUser.getId(), request, isAdmin));
+	}
+
+	@DeleteMapping("/{milestoneId}")
+	public ResponseEntity<MessageResponse> deleteMilestone(@PathVariable Long milestoneId,
+			Authentication authentication) {
+
+		User currentUser = currentUser(authentication);
+
+		boolean isAdmin = isAdmin(authentication);
+
+		milestoneService.deleteMilestone(milestoneId, currentUser.getId(), isAdmin);
+
+		return ResponseEntity.ok(MessageResponse.builder().message("Xóa Milestone thành công").build());
+	}
+
+	@GetMapping("/{milestoneId}")
+	public ResponseEntity<MilestoneResponse> getMilestone(@PathVariable Long milestoneId,
+			Authentication authentication) {
+
+		User currentUser = currentUser(authentication);
+
+		boolean isAdmin = isAdmin(authentication);
+
+		return ResponseEntity.ok(milestoneService.getMilestoneById(milestoneId, currentUser.getId(), isAdmin));
+	}
+
+	@GetMapping("/project/{projectId}")
+	public ResponseEntity<List<MilestoneResponse>> getProjectMilestones(@PathVariable Long projectId,
+			Authentication authentication) {
+
+		User currentUser = currentUser(authentication);
+
+		boolean isAdmin = isAdmin(authentication);
+
+		return ResponseEntity.ok(milestoneService.getMilestonesByProject(projectId, currentUser.getId(), isAdmin));
+	}
+
+	private User currentUser(Authentication authentication) {
+
+		if (authentication == null || authentication.getPrincipal() == null) {
+
+			throw new IllegalArgumentException("Không xác định được người dùng hiện tại");
+		}
+
+		return (User) authentication.getPrincipal();
+	}
+
+	private boolean isAdmin(Authentication authentication) {
+
+		return authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority)
+				.anyMatch("ROLE_ADMIN"::equals);
+	}
 }

@@ -25,6 +25,9 @@ public class IssueAttachment {
 
     @Column(nullable = false, length = 500)
     private String fileUrl;
+    
+    @Column(length = 500)
+    private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "issue_id", nullable = false)

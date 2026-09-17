@@ -20,10 +20,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-
 @Entity
-@Table(name = "document_permissions",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"document_id", "user_id", "permission_type"}))
+@Table(name = "document_permissions", uniqueConstraints = @UniqueConstraint(columnNames = { "document_id", "user_id",
+		"permission_type" }))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,19 +30,19 @@ import lombok.Setter;
 @Builder
 public class DocumentPermission {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "document_id", nullable = false)
-    private Document document;
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "document_id", nullable = false)
+	private Document document;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "user_id", nullable = false)
+	private User user;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "permission_type", nullable = false, length = 20)
-    private DocumentPermissionType permissionType;
+	@Enumerated(EnumType.STRING)
+	@Column(name = "permission_type", nullable = false, length = 20)
+	private DocumentPermissionType permissionType;
 }

@@ -1,10 +1,17 @@
 package com.c2.project_management_system.service;
 
-import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
+
+import com.c2.project_management_system.dto.respone.CloudinaryFile;
 
 public interface FileStorageService {
-    String storeFile(Long projectId, MultipartFile file);
-    Resource loadFileAsResource(String filePath);
-    void deleteFile(String filePath);
+
+	CloudinaryFile uploadFile(Long projectId, MultipartFile file);
+	
+	CloudinaryFile uploadIssueImage(Long issueId, MultipartFile file);
+
+	Resource loadFileAsResource(String fileUrl);
+
+	void deleteFile(String publicId);
 }

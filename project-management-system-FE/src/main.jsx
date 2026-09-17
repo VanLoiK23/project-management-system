@@ -32,6 +32,9 @@ import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
 import MemberProjects from "./pages/members/MemberProjects.jsx";
 import Progress from "./pages/pm/ProgressManagement.jsx";
 import ProjectDetailPage from "./pages/pm/ProjectDetailPage.jsx";
+import MemberTasks from "./pages/members/MemberTasks.jsx";
+import MemberIssues from "./pages/members/MemberIssues.jsx";
+import MemberDocuments from "./pages/members/Memberdocuments.jsx";
 const router = createBrowserRouter([
   {
     path: "/",
@@ -54,7 +57,6 @@ const router = createBrowserRouter([
           { path: "dashboard", element: <>{/* <AdminDashboard /> */}</> }, // Tổng quan Hệ thống
           { path: "users", element: <>{<AccountManagement />} </> }, // Quản lý Người dùng
           { path: "projects", element: <>{<AdminProjectManagement />}</> }, // Tất cả Dự án
-          { path: "roles", element: <>{/* <AdminRoles /> */}</> }, // Phân quyền
           { path: "settings", element: <>{/* <AdminSettings /> */}</> }, // Cài đặt Hệ thống
         ],
       },
@@ -68,17 +70,18 @@ const router = createBrowserRouter([
           </RoleRoute>
         ),
         children: [
-          { index: true, element: <Navigate to="dashboard" replace /> },
-          { path: "dashboard", element: <PmDashboard /> }, // Tổng quan
-          { path: "projects", element: <ProjectDashboard /> },
+          { index: true, element: <Navigate to="projects" replace /> },
+          { path: "dashboard", element: <PmDashboard /> },
+          { path: "projects", element: <ProjectDashboard /> }, // (Module 2)
           { path: "projects/:projectId", element: <ProjectDetailPage isPm={true} /> },
-          { path: "tasks", element: <TasksPage isPm={true} /> }, // Quản lý Công việc
-          { path: "progress", element: <Progress isPm={true} /> }, // Quản lý Công việc
-          { path: "milestones", element: <Milestones /> }, // Lịch trình
-          { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
-          { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
-          { path: "team", element: <PMTeam /> }, // Thành viên Team
-          { path: "reports", element: <ReportsPage isPm={true} /> }, // Báo cáo
+          { path: "tasks", element: <TasksPage isPm={true} /> }, // (Module 4)
+          { path: "progress", element: <Progress isPm={true} /> }, // (Module 5)
+          { path: "milestones", element: <Milestones /> }, // (Module 6)
+          { path: "issues", element: <Issues /> }, // (Module 7)
+          { path: "documents", element: <Documents /> }, // (Module 8 & 10)
+          { path: "team", element: <PMTeam /> }, // (Module 3)
+          { path: "reports", element: <ReportsPage isPm={true} /> },
+          { path: "notifications", element:<>{/* <ManageNotifications /> */}</> }, // Bổ sung: Gửi thông báo (Module 9)
         ],
       },
 
@@ -92,14 +95,16 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <Navigate to="projects" replace /> },
-          { path: "tasks", element: <TasksPage isPm={false} /> }, // Công việc của tôi
-          { path: "issues", element: <Issues /> }, // Vấn đề / Lỗi
-          { path: "documents", element: <Documents /> }, // Quản lý Tài liệu
+          { path: "projects", element: <MemberProjects /> }, // (Module 2)
+          { path: "tasks", element: <MemberTasks /> }, // (Module 4)
+          { path: "issues", element: <MemberIssues /> }, // (Module 7)
+          { path: "documents", element: <MemberDocuments /> }, // (Module 8)
+          
           { path: "reports", element: <ReportsPage isPm={false} /> }, // Báo cáo tiến độ
-          { path: "projects", element: <>{<MemberProjects />}</> }, // Dự án tham gia
           { path: "projects/:projectId", element: <ProjectDetailPage isPm={false} /> },
         ],
       },
+      { path: "notifications", element: <>{/* <MyNotifications /> */}</> }
     ],
   },
 
@@ -117,5 +122,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <ToastContainer position="top-right" autoClose={3000} />
       <RouterProvider router={router} />
     </AuthWrapper>
-  </React.StrictMode>,
+  </React.StrictMode>
 );

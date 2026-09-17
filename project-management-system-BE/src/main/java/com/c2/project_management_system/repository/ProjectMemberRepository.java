@@ -85,4 +85,21 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Lo
 	boolean existsByProjectIdAndUserId(Long projectId, Long userId);
 
 	boolean existsByUser_Id(Long userId);
+
+	@Query("""
+			SELECT pm
+			FROM ProjectMember pm
+			JOIN FETCH pm.user u
+			WHERE pm.project.id = :projectId
+			""")
+	List<ProjectMember> findMembersByProjectId(@Param("projectId") Long projectId);
+
+	@Query("""
+			SELECT COUNT(pm) > 0
+			FROM ProjectMember pm
+			WHERE pm.project.id = :projectId
+			  AND pm.user.id = :userId
+			  AND pm.user.status = com.c2.project_management_system.statusEnum.AccountStatus.ACTIVE
+			""")
+	boolean existsActiveMember(@Param("projectId") Long projectId, @Param("userId") Long userId);
 }

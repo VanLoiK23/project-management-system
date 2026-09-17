@@ -1,720 +1,2883 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   FileText,
+  FileSpreadsheet,
+  FileArchive,
+  FileCode,
+  Image as ImageIcon,
+  File,
   Download,
   History,
   UploadCloud,
   Trash2,
   X,
   Loader2,
-  AlertTriangle,
-  FolderKanban,
-  FileCode,
-  FileSpreadsheet,
-  FileArchive,
-  Image as ImageIcon,
-  Clock,
-  UserCircle2,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  ChevronRight,
+  ChevronDown,
   Search,
+  MoreVertical,
+  Pencil,
+  Move,
+  Shield,
+  Globe2,
+  Users,
+  RotateCcw,
+  Eye,
+  CalendarDays,
+  UserCircle2,
+  HardDrive,
+  Lock,
+  Check,
+  AlertTriangle,
   RefreshCw,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
 
-const apiFetchProjects = () => axios.get("/projects").then((res) => res.data);
-const apiFetchDocuments = (projectId) =>
-  axios.get(`/documents/project/${projectId}`).then((res) => res.data);
-const apiFetchVersions = (documentId) =>
-  axios.get(`/documents/${documentId}/versions`).then((res) => res.data);
+const apiFetchProjects = () =>
+  axios.get("/projects").then((res) => res.data);
+
+const apiFetchDocuments = (projectId, folderId = null) =>
+  axios
+    .get(`/documents/project/${projectId}`, {
+      params: folderId ? { folderId } : {},
+    })
+    .then((res) => res.data);
+
+const apiFetchFolders = (projectId) =>
+  axios
+    .get(`/documents/folders/project/${projectId}`)
+    .then((res) => res.data);
+
+const apiCreateFolder = (projectId, name, parentId = null) =>
+  axios
+    .post("/documents/folders", null, {
+      params: {
+        projectId,
+        name,
+        ...(parentId ? { parentId } : {}),
+      },
+    })
+    .then((res) => res.data);
+
+const apiDeleteFolder = (folderId) =>
+  axios.delete(`/documents/folders/${folderId}`);
+
+const apiUploadDocument = (formData) =>
+  axios
+    .post("/documents/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+    .then((res) => res.data);
+
+const apiRenameDocument = (documentId, name) =>
+  axios
+    .put(`/documents/${documentId}/name`, { name })
+    .then((res) => res.data);
+
+const apiMoveDocument = (documentId, folderId) =>
+  axios
+    .put(`/documents/${documentId}/move`, null, {
+      params: folderId ? { folderId } : {},
+    })
+    .then((res) => res.data);
+
+const apiUpdateVisibility = (documentId, visibility) =>
+  axios
+    .put(`/documents/${documentId}/visibility`, { visibility })
+    .then((res) => res.data);
+
 const apiDeleteDocument = (documentId) =>
   axios.delete(`/documents/${documentId}`);
 
-function getFileIcon(name = "") {
-  const ext = name.split(".").pop().toLowerCase();
-  if (["xls", "xlsx", "csv"].includes(ext)) {
-    return <FileSpreadsheet className="h-5 w-5 text-emerald-600" />;
-  }
-  if (["png", "jpg", "jpeg", "gif", "svg"].includes(ext)) {
-    return <ImageIcon className="h-5 w-5 text-purple-600" />;
-  }
-  if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
-    return <FileArchive className="h-5 w-5 text-amber-600" />;
-  }
-  if (["js", "jsx", "ts", "tsx", "html", "css", "json", "sql"].includes(ext)) {
-    return <FileCode className="h-5 w-5 text-blue-600" />;
-  }
-  return <FileText className="h-5 w-5 text-slate-600" />;
+const apiFetchVersions = (documentId) =>
+  axios
+    .get(`/documents/${documentId}/versions`)
+    .then((res) => res.data);
+
+const apiUploadVersion = (documentId, formData) =>
+  axios
+    .post(`/documents/${documentId}/versions`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+    .then((res) => res.data);
+
+const apiRestoreVersion = (documentId, versionId) =>
+  axios
+    .post(`/documents/${documentId}/versions/${versionId}/restore`)
+    .then((res) => res.data);
+
+const apiFetchPermissions = (documentId) =>
+  axios
+    .get(`/documents/${documentId}/permissions`)
+    .then((res) => res.data);
+
+const apiGrantPermission = (documentId, userId, permissionType) =>
+  axios
+    .post(`/documents/${documentId}/permissions`, {
+      userId,
+      permissionType,
+    })
+    .then((res) => res.data);
+
+const apiRevokePermission = (documentId, userId) =>
+  axios.delete(`/documents/${documentId}/permissions/${userId}`);
+
+const apiFetchProjectMembers = (projectId) =>
+  axios
+    .get(`/projects/${projectId}/members`, {
+      params: {
+        page: 0,
+        size: 100,
+      },
+    })
+    .then((res) => res.data);
+
+function getApiError(error, fallback) {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
 }
 
-// Memory cache for Documents
-let documentsCache = {
-  projects: null,
-  projectId: "",
-  docsByProject: {},
-};
+function extractList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+function getFileExtension(name = "") {
+  const cleanName = name.split("?")[0];
+  const parts = cleanName.split(".");
+  return parts.length > 1 ? parts.pop().toLowerCase() : "";
+}
+
+function getFileIcon(name = "", className = "h-5 w-5") {
+  const ext = getFileExtension(name);
+
+  if (["xls", "xlsx", "csv"].includes(ext)) {
+    return <FileSpreadsheet className={`${className} text-emerald-600`} />;
+  }
+
+  if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
+    return <FileArchive className={`${className} text-amber-600`} />;
+  }
+
+  if (
+    [
+      "js",
+      "jsx",
+      "ts",
+      "tsx",
+      "java",
+      "kt",
+      "py",
+      "html",
+      "css",
+      "json",
+      "sql",
+      "xml",
+    ].includes(ext)
+  ) {
+    return <FileCode className={`${className} text-blue-600`} />;
+  }
+
+  if (
+    ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"].includes(ext)
+  ) {
+    return <ImageIcon className={`${className} text-purple-600`} />;
+  }
+
+  if (ext === "pdf") {
+    return <FileText className={`${className} text-red-600`} />;
+  }
+
+  if (["doc", "docx"].includes(ext)) {
+    return <FileText className={`${className} text-blue-700`} />;
+  }
+
+  return <File className={`${className} text-slate-500`} />;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "-";
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${
+    units[unitIndex]
+  }`;
+}
+
+function formatDate(date) {
+  if (!date) return "-";
+
+  try {
+    return new Date(date).toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+function formatDateTime(date) {
+  if (!date) return "-";
+
+  try {
+    return new Date(date).toLocaleString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+function getPermissionLabel(permissionType) {
+  const value = String(permissionType || "").toUpperCase();
+
+  if (value === "VIEW") return "Xem";
+  if (value === "DOWNLOAD") return "Tải xuống";
+
+  return value;
+}
+
+function buildFolderTree(folders) {
+  const map = new Map();
+
+  folders.forEach((folder) => {
+    map.set(String(folder.id), {
+      ...folder,
+      children: [],
+    });
+  });
+
+  const roots = [];
+
+  folders.forEach((folder) => {
+    const current = map.get(String(folder.id));
+
+    if (folder.parentId && map.has(String(folder.parentId))) {
+      map
+        .get(String(folder.parentId))
+        .children.push(current);
+    } else {
+      roots.push(current);
+    }
+  });
+
+  const sortTree = (items) => {
+    items.sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), "vi")
+    );
+
+    items.forEach((item) => {
+      sortTree(item.children);
+    });
+  };
+
+  sortTree(roots);
+
+  return roots;
+}
+
+function Modal({ title, children, onClose, width = "max-w-lg" }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+      <div
+        className={`w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl`}
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(90vh-72px)] overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FolderTreeItem({
+  folder,
+  level,
+  selectedFolderId,
+  onSelect,
+  onDelete,
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = folder.children?.length > 0;
+
+  const selected =
+    selectedFolderId !== null &&
+    String(selectedFolderId) === String(folder.id);
+
+  return (
+    <div>
+      <div
+        className={`group flex items-center gap-1 rounded-xl px-2 py-1.5 transition ${
+          selected
+            ? "bg-blue-50 text-blue-700"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
+        style={{ paddingLeft: `${8 + level * 16}px` }}
+      >
+        <button
+          type="button"
+          onClick={() => hasChildren && setExpanded((value) => !value)}
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${
+            hasChildren
+              ? "hover:bg-slate-200"
+              : "cursor-default"
+          }`}
+        >
+          {hasChildren &&
+            (expanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            ))}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSelect(folder.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {selected ? (
+            <FolderOpen className="h-4 w-4 shrink-0 text-blue-600" />
+          ) : (
+            <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+          )}
+
+          <span className="truncate text-sm font-medium">
+            {folder.name}
+          </span>
+
+          <span className="ml-auto text-xs text-slate-400">
+            {folder.documentCount || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDelete(folder)}
+          className="hidden rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block"
+          title="Xóa thư mục"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {expanded &&
+        hasChildren &&
+        folder.children.map((child) => (
+          <FolderTreeItem
+            key={child.id}
+            folder={child}
+            level={level + 1}
+            selectedFolderId={selectedFolderId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+          />
+        ))}
+    </div>
+  );
+}
+
+function EmptyState({ searchQuery, selectedFolderId, onUpload }) {
+  return (
+    <div className="flex min-h-[380px] flex-col items-center justify-center px-6 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+        <FileText className="h-8 w-8 text-slate-400" />
+      </div>
+
+      <h3 className="text-lg font-semibold text-slate-800">
+        {searchQuery
+          ? "Không tìm thấy tài liệu"
+          : selectedFolderId
+          ? "Thư mục này chưa có tài liệu"
+          : "Chưa có tài liệu"}
+      </h3>
+
+      <p className="mt-1 max-w-md text-sm text-slate-500">
+        {searchQuery
+          ? "Hãy thử thay đổi từ khóa tìm kiếm."
+          : "Tải tài liệu đầu tiên lên để bắt đầu quản lý tài liệu dự án."}
+      </p>
+
+      {!searchQuery && (
+        <button
+          type="button"
+          onClick={onUpload}
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+        >
+          <UploadCloud className="h-4 w-4" />
+          Tải tài liệu lên
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function Documents() {
-  const [projects, setProjects] = useState(() => documentsCache.projects || []);
-  const [projectId, setProjectId] = useState(() => documentsCache.projectId || "");
-  const [documents, setDocuments] = useState(() => 
-    documentsCache.projectId ? documentsCache.docsByProject[documentsCache.projectId] || [] : []
-  );
-  const [loading, setLoading] = useState(() => !documentsCache.projects);
-  const [refreshing, setRefreshing] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+
+  const [documents, setDocuments] = useState([]);
+  const [folders, setFolders] = useState([]);
+
+  const [selectedFolderId, setSelectedFolderId] = useState(null);
+
+  const [loading, setLoading] = useState(false);
+  const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Modal Upload tài liệu mới
+  const [toast, setToast] = useState(null);
+
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [docName, setDocName] = useState("");
   const [docDesc, setDocDesc] = useState("");
+  const [uploadFolderId, setUploadFolderId] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // Modal Cập nhật phiên bản mới
-  const [showNewVersionModal, setShowNewVersionModal] = useState(false);
-  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [folderParentId, setFolderParentId] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameDoc, setRenameDoc] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renaming, setRenaming] = useState(false);
+
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveDoc, setMoveDoc] = useState(null);
+  const [moveFolderId, setMoveFolderId] = useState("");
+  const [moving, setMoving] = useState(false);
+
+  const [showVersionModal, setShowVersionModal] = useState(false);
   const [versionFile, setVersionFile] = useState(null);
   const [changeDesc, setChangeDesc] = useState("");
+  const [selectedDoc, setSelectedDoc] = useState(null);
   const [submittingVersion, setSubmittingVersion] = useState(false);
 
-  // Modal Lịch sử phiên bản
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [versions, setVersions] = useState([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState(null);
 
-  // Load Projects on mount
-  useEffect(() => {
-    if (documentsCache.projects && documentsCache.projects.length > 0) {
-      setProjects(documentsCache.projects);
-      if (!projectId && documentsCache.projectId) {
-        setProjectId(documentsCache.projectId);
-      }
-      return;
-    }
-    apiFetchProjects()
-      .then((data) => {
-        const list = data || [];
-        documentsCache.projects = list;
-        setProjects(list);
-        if (list.length > 0 && !projectId) {
-          const firstId = String(list[0].id);
-          documentsCache.projectId = firstId;
-          setProjectId(firstId);
-        }
-      })
-      .catch((err) => setError(err.message || "Không thể tải danh sách dự án"));
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [permissionDoc, setPermissionDoc] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [permissionSearch, setPermissionSearch] = useState("");
+  const [savingPermission, setSavingPermission] = useState(null);
+
+  const [showVisibilityModal, setShowVisibilityModal] = useState(false);
+  const [visibilityDoc, setVisibilityDoc] = useState(null);
+  const [updatingVisibility, setUpdatingVisibility] = useState(false);
+
+  const showToast = useCallback((type, message) => {
+    setToast({ type, message });
+
+    window.setTimeout(() => {
+      setToast(null);
+    }, 3500);
   }, []);
 
-  // Load Documents when projectId changes
-  const loadDocuments = useCallback((force = false) => {
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await apiFetchProjects();
+      const list = extractList(data);
+
+      setProjects(list);
+
+      if (list.length > 0 && !projectId) {
+        setProjectId(String(list[0].id));
+      }
+    } catch (err) {
+      setError(getApiError(err, "Không thể tải danh sách dự án"));
+    }
+  }, [projectId]);
+
+  const loadFolders = useCallback(async () => {
     if (!projectId) return;
-    if (!force && documentsCache.docsByProject[projectId]) {
-      setDocuments(documentsCache.docsByProject[projectId]);
-      setLoading(false);
-      return;
+
+    setLoadingFolders(true);
+
+    try {
+      const data = await apiFetchFolders(projectId);
+      setFolders(extractList(data));
+    } catch (err) {
+      setError(getApiError(err, "Không thể tải danh sách thư mục"));
+    } finally {
+      setLoadingFolders(false);
     }
-    if (force) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+  }, [projectId]);
+
+  const loadDocuments = useCallback(async () => {
+    if (!projectId) return;
+
+    setLoading(true);
     setError("");
-    apiFetchDocuments(projectId)
-      .then((data) => {
-        const list = data || [];
-        documentsCache.projectId = projectId;
-        documentsCache.docsByProject[projectId] = list;
-        setDocuments(list);
-      })
-      .catch((err) => setError(err.message || "Không thể tải danh sách tài liệu"))
-      .finally(() => {
-        setLoading(false);
-        setRefreshing(false);
-      });
+
+    try {
+      const data = await apiFetchDocuments(
+        projectId,
+        selectedFolderId
+      );
+
+      setDocuments(extractList(data));
+    } catch (err) {
+      setError(getApiError(err, "Không thể tải danh sách tài liệu"));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, selectedFolderId]);
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    setSelectedFolderId(null);
+    loadFolders();
   }, [projectId]);
 
   useEffect(() => {
-    if (projectId) {
-      documentsCache.projectId = projectId;
-      loadDocuments();
-    }
-  }, [projectId, loadDocuments]);
+    loadDocuments();
+  }, [loadDocuments]);
 
-  const filteredDocuments = documents.filter((doc) => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      (doc.name || "").toLowerCase().includes(q) ||
-      (doc.description || "").toLowerCase().includes(q)
+  const folderTree = useMemo(
+    () => buildFolderTree(folders),
+    [folders]
+  );
+
+  const currentFolder = useMemo(() => {
+    if (!selectedFolderId) return null;
+
+    return folders.find(
+      (folder) =>
+        String(folder.id) === String(selectedFolderId)
     );
-  });
+  }, [folders, selectedFolderId]);
 
-  // Xử lý upload tài liệu mới
-  const handleUploadSubmit = async (e) => {
-    e.preventDefault();
-    if (!uploadFile) {
-      alert("Vui lòng chọn file tải lên!");
+  const filteredDocuments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return documents;
+
+    return documents.filter((doc) => {
+      return (
+        String(doc.name || "").toLowerCase().includes(query) ||
+        String(doc.description || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(doc.uploadedByName || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(doc.folderName || "")
+          .toLowerCase()
+          .includes(query)
+      );
+    });
+  }, [documents, searchQuery]);
+
+  const stats = useMemo(() => {
+    const publicCount = documents.filter(
+      (doc) =>
+        String(doc.visibility || "").toUpperCase() === "PUBLIC"
+    ).length;
+
+    const privateCount = documents.filter(
+      (doc) =>
+        String(doc.visibility || "").toUpperCase() === "PRIVATE"
+    ).length;
+
+    return {
+      documents: documents.length,
+      folders: folders.length,
+      publicCount,
+      privateCount,
+    };
+  }, [documents, folders]);
+
+  const refreshAll = async () => {
+    await Promise.all([loadDocuments(), loadFolders()]);
+  };
+
+  const openUploadModal = () => {
+    setUploadFile(null);
+    setDocName("");
+    setDocDesc("");
+    setUploadFolderId(
+      selectedFolderId ? String(selectedFolderId) : ""
+    );
+    setShowUploadModal(true);
+  };
+
+  const handleUploadSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!projectId) {
+      showToast("error", "Vui lòng chọn dự án.");
       return;
     }
+
+    if (!uploadFile) {
+      showToast("error", "Vui lòng chọn file.");
+      return;
+    }
+
     setUploading(true);
+
     const formData = new FormData();
+
     formData.append("projectId", projectId);
-    formData.append("name", docName || uploadFile.name);
-    formData.append("description", docDesc);
+
+    if (uploadFolderId) {
+      formData.append("folderId", uploadFolderId);
+    }
+
+    formData.append(
+      "name",
+      docName.trim() || uploadFile.name
+    );
+
+    formData.append("description", docDesc.trim());
     formData.append("file", uploadFile);
 
     try {
-      await axios.post("/documents/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await apiUploadDocument(formData);
+
       setShowUploadModal(false);
       setUploadFile(null);
       setDocName("");
       setDocDesc("");
-      loadDocuments();
+
+      await refreshAll();
+
+      showToast(
+        "success",
+        "Tải tài liệu lên thành công."
+      );
     } catch (err) {
-      alert(err.response?.data?.message || err.message || "Lỗi khi tải lên tài liệu");
+      console.error("UPLOAD ERROR:", err);
+      console.error("STATUS:", err.response?.status);
+      console.error("DATA:", err.response?.data);
+    
+      showToast(
+        "error",
+        getApiError(err, "Không thể tải tài liệu lên.")
+      );
     } finally {
       setUploading(false);
     }
   };
 
-  // Xử lý tạo phiên bản mới
-  const handleNewVersionSubmit = async (e) => {
-    e.preventDefault();
-    if (!versionFile || !selectedDoc) {
-      alert("Vui lòng chọn file cho phiên bản mới!");
+  const handleCreateFolder = async (event) => {
+    event.preventDefault();
+
+    if (!folderName.trim()) {
+      showToast("error", "Vui lòng nhập tên thư mục.");
       return;
     }
+
+    setCreatingFolder(true);
+
+    try {
+      await apiCreateFolder(
+        projectId,
+        folderName.trim(),
+        folderParentId || null
+      );
+
+      setShowFolderModal(false);
+      setFolderName("");
+      setFolderParentId("");
+
+      await loadFolders();
+
+      showToast(
+        "success",
+        "Tạo thư mục thành công."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(err, "Không thể tạo thư mục.")
+      );
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleDeleteFolder = async (folder) => {
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa thư mục "${folder.name}"?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await apiDeleteFolder(folder.id);
+
+      if (
+        selectedFolderId &&
+        String(selectedFolderId) === String(folder.id)
+      ) {
+        setSelectedFolderId(null);
+      }
+
+      await refreshAll();
+
+      showToast(
+        "success",
+        "Xóa thư mục thành công."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể xóa thư mục. Hãy kiểm tra thư mục có còn tài liệu hay không."
+        )
+      );
+    }
+  };
+
+  const openRenameModal = (doc) => {
+    setRenameDoc(doc);
+    setRenameValue(doc.name || "");
+    setShowRenameModal(true);
+  };
+
+  const handleRename = async (event) => {
+    event.preventDefault();
+
+    if (!renameDoc || !renameValue.trim()) {
+      showToast("error", "Tên tài liệu không được để trống.");
+      return;
+    }
+
+    setRenaming(true);
+
+    try {
+      await apiRenameDocument(
+        renameDoc.id,
+        renameValue.trim()
+      );
+
+      setShowRenameModal(false);
+      setRenameDoc(null);
+      setRenameValue("");
+
+      await loadDocuments();
+
+      showToast(
+        "success",
+        "Đổi tên tài liệu thành công."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(err, "Không thể đổi tên tài liệu.")
+      );
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const openMoveModal = (doc) => {
+    setMoveDoc(doc);
+    setMoveFolderId(
+      doc.folderId ? String(doc.folderId) : ""
+    );
+    setShowMoveModal(true);
+  };
+
+  const handleMoveDocument = async (event) => {
+    event.preventDefault();
+
+    if (!moveDoc) return;
+
+    setMoving(true);
+
+    try {
+      await apiMoveDocument(
+        moveDoc.id,
+        moveFolderId || null
+      );
+
+      setShowMoveModal(false);
+      setMoveDoc(null);
+      setMoveFolderId("");
+
+      await refreshAll();
+
+      showToast(
+        "success",
+        "Di chuyển tài liệu thành công."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(err, "Không thể di chuyển tài liệu.")
+      );
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const openVersionModal = (doc) => {
+    setSelectedDoc(doc);
+    setVersionFile(null);
+    setChangeDesc("");
+    setShowVersionModal(true);
+  };
+
+  const handleNewVersionSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!selectedDoc || !versionFile) {
+      showToast(
+        "error",
+        "Vui lòng chọn file cho phiên bản mới."
+      );
+      return;
+    }
+
     setSubmittingVersion(true);
+
     const formData = new FormData();
-    formData.append("changeDescription", changeDesc);
+
+    formData.append(
+      "changeDescription",
+      changeDesc.trim()
+    );
+
     formData.append("file", versionFile);
 
     try {
-      await axios.post(`/documents/${selectedDoc.id}/versions`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setShowNewVersionModal(false);
+      await apiUploadVersion(
+        selectedDoc.id,
+        formData
+      );
+
+      setShowVersionModal(false);
+      setSelectedDoc(null);
       setVersionFile(null);
       setChangeDesc("");
-      setSelectedDoc(null);
-      loadDocuments();
+
+      await loadDocuments();
+
+      showToast(
+        "success",
+        "Tạo phiên bản mới thành công."
+      );
     } catch (err) {
-      alert(err.response?.data?.message || err.message || "Lỗi khi cập nhật phiên bản");
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể tạo phiên bản mới."
+        )
+      );
     } finally {
       setSubmittingVersion(false);
     }
   };
 
-  // Mở modal lịch sử phiên bản
-  const openHistoryModal = (doc) => {
+  const openHistoryModal = async (doc) => {
     setSelectedDoc(doc);
+    setVersions([]);
     setShowHistoryModal(true);
     setLoadingVersions(true);
-    apiFetchVersions(doc.id)
-      .then((data) => setVersions(data || []))
-      .catch((err) => alert(err.message || "Không thể tải lịch sử phiên bản"))
-      .finally(() => setLoadingVersions(false));
-  };
 
-  // Tải file tài liệu
-  const handleDownload = (versionId, fileName = "document") => {
-    axios
-      .get(`/documents/versions/${versionId}/download`, {
-        responseType: "blob",
-      })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", fileName);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-      })
-      .catch((err) => alert(err.message || "Lỗi khi tải file"));
-  };
-
-  // Xóa tài liệu
-  const handleDeleteDocument = async (docId) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa tài liệu này và toàn bộ các phiên bản của nó?")) {
-      return;
-    }
     try {
-      await apiDeleteDocument(docId);
-      loadDocuments(true);
+      const data = await apiFetchVersions(doc.id);
+      setVersions(extractList(data));
     } catch (err) {
-      alert(err.message || "Lỗi khi xóa tài liệu");
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể tải lịch sử phiên bản."
+        )
+      );
+    } finally {
+      setLoadingVersions(false);
     }
   };
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "-";
+  const handleRestoreVersion = async (version) => {
+    if (!selectedDoc) return;
+
+    const confirmed = window.confirm(
+      `Khôi phục phiên bản v${version.versionNumber}?`
+    );
+
+    if (!confirmed) return;
+
+    setRestoringVersionId(version.id);
+
     try {
-      return new Date(dateStr).toLocaleDateString("vi-VN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-    } catch {
-      return dateStr;
+      await apiRestoreVersion(
+        selectedDoc.id,
+        version.id
+      );
+
+      const data = await apiFetchVersions(
+        selectedDoc.id
+      );
+
+      setVersions(extractList(data));
+
+      await loadDocuments();
+
+      showToast(
+        "success",
+        `Đã khôi phục phiên bản v${version.versionNumber}.`
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể khôi phục phiên bản."
+        )
+      );
+    } finally {
+      setRestoringVersionId(null);
     }
+  };
+
+  const handleDownload = async (
+    versionId,
+    fileName = "document"
+  ) => {
+    try {
+      const response = await axios.get(
+        `/documents/versions/${versionId}/download`,
+        {
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob(
+        [response.data],
+        {
+          type:
+            response.headers["content-type"] ||
+            "application/octet-stream",
+        }
+      );
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(err, "Không thể tải file.")
+      );
+    }
+  };
+
+  const handleDeleteDocument = async (doc) => {
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa tài liệu "${doc.name}" và toàn bộ lịch sử phiên bản?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await apiDeleteDocument(doc.id);
+
+      await refreshAll();
+
+      showToast(
+        "success",
+        "Xóa tài liệu thành công."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(err, "Không thể xóa tài liệu.")
+      );
+    }
+  };
+
+  const openVisibilityModal = (doc) => {
+    setVisibilityDoc(doc);
+    setShowVisibilityModal(true);
+  };
+
+  const handleChangeVisibility = async (
+    visibility
+  ) => {
+    if (!visibilityDoc) return;
+
+    setUpdatingVisibility(true);
+
+    try {
+      await apiUpdateVisibility(
+        visibilityDoc.id,
+        visibility
+      );
+
+      setShowVisibilityModal(false);
+      setVisibilityDoc(null);
+
+      await loadDocuments();
+
+      showToast(
+        "success",
+        visibility === "PUBLIC"
+          ? "Tài liệu đã được chuyển sang công khai."
+          : "Tài liệu đã được chuyển sang bảo mật."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể thay đổi quyền truy cập."
+        )
+      );
+    } finally {
+      setUpdatingVisibility(false);
+    }
+  };
+
+  const openPermissionModal = async (doc) => {
+    setPermissionDoc(doc);
+    setPermissionSearch("");
+    setPermissions([]);
+    setShowPermissionModal(true);
+    setLoadingPermissions(true);
+
+    try {
+      const data = await apiFetchPermissions(
+        doc.id
+      );
+
+      setPermissions(extractList(data));
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể tải danh sách phân quyền."
+        )
+      );
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
+  const projectMembers = useMemo(() => {
+    return [];
+  }, []);
+
+  const loadMembersForPermissions = useCallback(
+    async () => {
+      if (!projectId) return [];
+
+      try {
+        const data = await apiFetchProjectMembers(
+          projectId
+        );
+
+        return extractList(data).map((member) => ({
+          id:
+            member.userId ??
+            member.id ??
+            member.user?.id,
+          name:
+            member.userName ??
+            member.fullName ??
+            member.user?.fullName ??
+            "Người dùng",
+          email:
+            member.email ??
+            member.userEmail ??
+            member.user?.email ??
+            "",
+        }));
+      } catch {
+        return [];
+      }
+    },
+    [projectId]
+  );
+
+  const [members, setMembers] = useState([]);
+
+  useEffect(() => {
+    if (!showPermissionModal) return;
+
+    loadMembersForPermissions().then(setMembers);
+  }, [
+    showPermissionModal,
+    loadMembersForPermissions,
+  ]);
+
+  const hasPermission = (userId, type) => {
+    return permissions.some(
+      (permission) =>
+        String(permission.userId) === String(userId) &&
+        String(permission.permissionType).toUpperCase() ===
+          type
+    );
+  };
+
+  const togglePermission = async (
+    member,
+    permissionType
+  ) => {
+    if (!permissionDoc) return;
+
+    const exists = hasPermission(
+      member.id,
+      permissionType
+    );
+
+    setSavingPermission(
+      `${member.id}-${permissionType}`
+    );
+
+    try {
+      if (exists) {
+        await apiRevokePermission(
+          permissionDoc.id,
+          member.id
+        );
+      } else {
+        await apiGrantPermission(
+          permissionDoc.id,
+          member.id,
+          permissionType
+        );
+      }
+
+      const data = await apiFetchPermissions(
+        permissionDoc.id
+      );
+
+      setPermissions(extractList(data));
+
+      showToast(
+        "success",
+        exists
+          ? "Đã thu hồi quyền."
+          : "Đã cấp quyền."
+      );
+    } catch (err) {
+      showToast(
+        "error",
+        getApiError(
+          err,
+          "Không thể cập nhật quyền."
+        )
+      );
+    } finally {
+      setSavingPermission(null);
+    }
+  };
+
+  const filteredMembers = useMemo(() => {
+    const q = permissionSearch.trim().toLowerCase();
+
+    if (!q) return members;
+
+    return members.filter(
+      (member) =>
+        String(member.name || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(member.email || "")
+          .toLowerCase()
+          .includes(q)
+    );
+  }, [members, permissionSearch]);
+
+  const renderFolderOptions = (
+    tree,
+    level = 0
+  ) => {
+    return tree.flatMap((folder) => [
+      <option
+        key={folder.id}
+        value={folder.id}
+      >
+        {"— ".repeat(level)}
+        {folder.name}
+      </option>,
+      ...renderFolderOptions(
+        folder.children || [],
+        level + 1
+      ),
+    ]);
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Quản lý Tài liệu</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Lưu trữ tài liệu dự án, kiểm soát phiên bản và chia sẻ an toàn cho thành viên
-          </p>
-        </div>
+    <div className="min-h-screen space-y-6 bg-slate-50 pb-12">
+      {toast && (
+        <div className="fixed right-6 top-6 z-[70]">
+          <div
+            className={`flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-xl ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {toast.type === "success" ? (
+              <Check className="mt-0.5 h-5 w-5 shrink-0" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            )}
 
-        {/* Toolbar Controls */}
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
-          {/* Search Box */}
-          <div className="relative w-40 sm:w-48 shrink-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm tài liệu..."
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20"
-            />
+            <span className="text-sm font-medium">
+              {toast.message}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
+                <HardDrive className="h-6 w-6 text-blue-600" />
+              </div>
+
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                  Quản lý tài liệu
+                </h1>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Kho lưu trữ tài liệu, phân quyền và quản lý
+                  lịch sử phiên bản của dự án.
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Project Selector with fixed width and ellipsis */}
-          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm w-48 sm:w-56 md:w-64 shrink-0 overflow-hidden">
-            <FolderKanban className="h-4 w-4 shrink-0 text-slate-400" />
+          <div className="flex flex-col gap-3 sm:flex-row">
             <select
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              title={projects.find((p) => String(p.id) === String(projectId))?.name || ""}
-              className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer w-full truncate pr-1"
+              onChange={(event) =>
+                setProjectId(event.target.value)
+              }
+              className="min-w-[240px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id} title={p.name}>
-                  {p.name}
+              {projects.length === 0 && (
+                <option value="">
+                  Không có dự án
+                </option>
+              )}
+
+              {projects.map((project) => (
+                <option
+                  key={project.id}
+                  value={project.id}
+                >
+                  {project.name}
                 </option>
               ))}
             </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFolderParentId(
+                  selectedFolderId
+                    ? String(selectedFolderId)
+                    : ""
+                );
+                setFolderName("");
+                setShowFolderModal(true);
+              }}
+              disabled={!projectId}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FolderPlus className="h-4 w-4" />
+              Tạo thư mục
+            </button>
+
+            <button
+              type="button"
+              onClick={openUploadModal}
+              disabled={!projectId}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <UploadCloud className="h-4 w-4" />
+              Tải tài liệu
+            </button>
           </div>
-
-          {/* Refresh Button */}
-          <button
-            type="button"
-            onClick={() => loadDocuments(true)}
-            disabled={refreshing || !projectId}
-            title="Làm mới danh sách tài liệu"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
-          </button>
-
-          {/* Upload Button */}
-          <button
-            type="button"
-            onClick={() => setShowUploadModal(true)}
-            disabled={!projectId}
-            className="inline-flex h-10 shrink-0 whitespace-nowrap items-center gap-2 rounded-xl bg-navy-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 disabled:opacity-50 transition-colors"
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            Tải lên tài liệu
-          </button>
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 p-4 mb-6 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-          <AlertTriangle className="h-5 w-5 flex-shrink-0" />
-          <span>{error}</span>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">
+                Tổng tài liệu
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {stats.documents}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-blue-50 p-3">
+              <FileText className="h-5 w-5 text-blue-600" />
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* Document Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-2" />
-            <p className="text-sm">Đang tải danh sách tài liệu...</p>
-          </div>
-        ) : documents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-3">
-              <UploadCloud className="h-8 w-8 text-blue-500" />
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">
+                Thư mục
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {stats.folders}
+              </p>
             </div>
-            <h3 className="text-base font-semibold text-slate-800">Dự án chưa có tài liệu nào</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              Nhấn nút &ldquo;Tải lên tài liệu&rdquo; phía trên để thêm tài liệu đầu tiên cho dự án này.
-            </p>
-          </div>
-        ) : filteredDocuments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center mb-3 text-slate-400">
-              <Search className="h-8 w-8" />
+
+            <div className="rounded-xl bg-amber-50 p-3">
+              <Folder className="h-5 w-5 text-amber-600" />
             </div>
-            <h3 className="text-base font-semibold text-slate-800">Không tìm thấy tài liệu phù hợp</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              Không có tài liệu nào khớp với từ khóa &ldquo;{searchQuery}&rdquo;.
-            </p>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/75 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3.5 px-6">Tên tài liệu</th>
-                  <th className="py-3.5 px-6">Phiên bản</th>
-                  <th className="py-3.5 px-6">Người đăng</th>
-                  <th className="py-3.5 px-6">Ngày cập nhật</th>
-                  <th className="py-3.5 px-6 text-right w-36">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {filteredDocuments.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-6 max-w-[280px] sm:max-w-[360px]">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="mt-0.5 p-2 rounded-lg bg-slate-50 border border-slate-100 shrink-0">
-                          {getFileIcon(doc.name)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-slate-900 leading-snug truncate" title={doc.name}>
-                            {doc.name}
-                          </p>
-                          {doc.description && (
-                            <p className="text-xs text-slate-500 mt-0.5 truncate" title={doc.description}>
-                              {doc.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
+        </div>
 
-                    <td className="py-4 px-6 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        v{doc.currentVersionNumber || 1}
-                      </span>
-                    </td>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">
+                Công khai
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {stats.publicCount}
+              </p>
+            </div>
 
-                    <td className="py-4 px-6 text-slate-600 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <UserCircle2 className="h-4 w-4 text-slate-400" />
-                        <span>{doc.uploadedByName || "Thành viên"}</span>
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-6 text-xs text-slate-500 whitespace-nowrap">
-                      {formatDate(doc.updatedAt || doc.createdAt)}
-                    </td>
-
-                    <td className="py-4 px-6 text-right whitespace-nowrap w-36">
-                      <div className="flex items-center justify-end gap-1">
-                        {/* Nút Tải xuống phiên bản mới nhất */}
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(doc.currentVersionId, doc.name)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          title="Tải về bản mới nhất"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
-
-                        {/* Nút Cập nhật phiên bản mới */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedDoc(doc);
-                            setShowNewVersionModal(true);
-                          }}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                          title="Tải lên phiên bản mới"
-                        >
-                          <UploadCloud className="h-4 w-4" />
-                        </button>
-
-                        {/* Nút Lịch sử phiên bản */}
-                        <button
-                          type="button"
-                          onClick={() => openHistoryModal(doc)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                          title="Lịch sử phiên bản"
-                        >
-                          <History className="h-4 w-4" />
-                        </button>
-
-                        {/* Nút Xóa */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                          title="Xóa tài liệu"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <Globe2 className="h-5 w-5 text-emerald-600" />
+            </div>
           </div>
-        )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">
+                Bảo mật
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {stats.privateCount}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-red-50 p-3">
+              <Lock className="h-5 w-5 text-red-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* MODAL 1: Tải lên tài liệu mới */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
-              <h3 className="font-bold text-slate-900">Tải lên tài liệu mới</h3>
-              <button
-                type="button"
-                onClick={() => setShowUploadModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-900">
+              Kho tài liệu
+            </h2>
 
-            <form onSubmit={handleUploadSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Chọn file tài liệu *
-                </label>
-                <input
-                  type="file"
-                  required
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      setUploadFile(f);
-                      if (!docName) setDocName(f.name);
-                    }
-                  }}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 rounded-xl p-2"
-                />
-              </div>
+            <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+              <span>Kho gốc</span>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tên hiển thị tài liệu
-                </label>
-                <input
-                  type="text"
-                  value={docName}
-                  onChange={(e) => setDocName(e.target.value)}
-                  placeholder="Nhập tên tài liệu (hoặc để trống lấy theo tên file)"
-                  className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mô tả / Ghi chú
-                </label>
-                <textarea
-                  value={docDesc}
-                  onChange={(e) => setDocDesc(e.target.value)}
-                  rows={3}
-                  placeholder="Ghi chú nội dung tài liệu..."
-                  className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUploadModal(false)}
-                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl font-medium"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium shadow-sm disabled:opacity-50"
-                >
-                  {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Tải lên
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 2: Cập nhật phiên bản mới */}
-      {showNewVersionModal && selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
-              <div>
-                <h3 className="font-bold text-slate-900">Cập nhật phiên bản mới</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Tài liệu: <span className="font-semibold text-slate-700">{selectedDoc.name}</span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNewVersionModal(false);
-                  setSelectedDoc(null);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleNewVersionSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Chọn file phiên bản mới *
-                </label>
-                <input
-                  type="file"
-                  required
-                  onChange={(e) => setVersionFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer border border-slate-200 rounded-xl p-2"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mô tả thay đổi (Changelog)
-                </label>
-                <textarea
-                  value={changeDesc}
-                  onChange={(e) => setChangeDesc(e.target.value)}
-                  rows={3}
-                  placeholder="Ví dụ: Cập nhật điều khoản hợp đồng mới, sửa lỗi số liệu bảng 2..."
-                  className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewVersionModal(false);
-                    setSelectedDoc(null);
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl font-medium"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingVersion}
-                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-sm disabled:opacity-50"
-                >
-                  {submittingVersion && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Lưu phiên bản mới
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 3: Lịch sử phiên bản */}
-      {showHistoryModal && selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <History className="h-5 w-5 text-amber-600" />
-                <div>
-                  <h3 className="font-bold text-slate-900">Lịch sử phiên bản</h3>
-                  <p className="text-xs text-slate-500">
-                    Tài liệu: <span className="font-semibold text-slate-700">{selectedDoc.name}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowHistoryModal(false);
-                  setSelectedDoc(null);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              {loadingVersions ? (
-                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
-                  <Loader2 className="h-6 w-6 animate-spin text-blue-600 mb-2" />
-                  <p className="text-xs">Đang tải lịch sử phiên bản...</p>
-                </div>
-              ) : versions.length === 0 ? (
-                <p className="text-center text-xs text-slate-500 py-6">Chưa có thông tin phiên bản</p>
-              ) : (
-                <div className="space-y-4">
-                  {versions.map((ver, idx) => (
-                    <div
-                      key={ver.id}
-                      className={`p-4 rounded-xl border transition-all ${
-                        idx === 0
-                          ? "border-emerald-200 bg-emerald-50/30 ring-1 ring-emerald-500/10"
-                          : "border-slate-100 bg-white"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                              idx === 0
-                                ? "bg-emerald-600 text-white"
-                                : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            v{ver.versionNumber}
-                          </span>
-                          {idx === 0 && (
-                            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
-                              Hiện hành
-                            </span>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(ver.id, `${selectedDoc.name}_v${ver.versionNumber}`)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 border border-blue-200 transition-colors"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Tải bản v{ver.versionNumber}
-                        </button>
-                      </div>
-
-                      <p className="text-xs text-slate-700 mt-2 font-medium">
-                        {ver.changeDescription || "Không có ghi chú thay đổi"}
-                      </p>
-
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-3 pt-2 border-t border-slate-100">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatDate(ver.createdAt)}
-                        </span>
-                        <span>Đăng bởi: {ver.editedByName || "Thành viên"}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {currentFolder && (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <span className="font-medium text-slate-700">
+                    {currentFolder.name}
+                  </span>
+                </>
               )}
             </div>
           </div>
+
+          <div className="relative w-full lg:w-80">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+            <input
+              value={searchQuery}
+              onChange={(event) =>
+                setSearchQuery(event.target.value)
+              }
+              placeholder="Tìm tài liệu..."
+              className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-4 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
         </div>
+
+        <div className="grid min-h-[560px] grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">
+                Thư mục
+              </h3>
+
+              {loadingFolders && (
+                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedFolderId(null)
+                }
+                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
+                  selectedFolderId === null
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {selectedFolderId === null ? (
+                  <FolderOpen className="h-4 w-4 text-blue-600" />
+                ) : (
+                  <Folder className="h-4 w-4 text-amber-500" />
+                )}
+
+                <span>Kho gốc</span>
+
+                <span className="ml-auto text-xs text-slate-400">
+                  {documents.length}
+                </span>
+              </button>
+
+              {folderTree.map((folder) => (
+                <FolderTreeItem
+                  key={folder.id}
+                  folder={folder}
+                  level={0}
+                  selectedFolderId={
+                    selectedFolderId
+                  }
+                  onSelect={(id) =>
+                    setSelectedFolderId(id)
+                  }
+                  onDelete={handleDeleteFolder}
+                />
+              ))}
+            </div>
+
+            {folders.length === 0 &&
+              !loadingFolders && (
+                <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-4 text-center">
+                  <Folder className="mx-auto h-7 w-7 text-slate-300" />
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Chưa có thư mục.
+                  </p>
+                </div>
+              )}
+          </aside>
+
+          <main className="min-w-0">
+            {error && (
+              <div className="m-4 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  {error}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    loadDocuments();
+                  }}
+                  className="rounded-lg p-2 text-red-600 hover:bg-red-100"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex min-h-[480px] items-center justify-center">
+                <div className="text-center">
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" />
+                  <p className="mt-3 text-sm text-slate-500">
+                    Đang tải tài liệu...
+                  </p>
+                </div>
+              </div>
+            ) : filteredDocuments.length === 0 ? (
+              <EmptyState
+                searchQuery={searchQuery}
+                selectedFolderId={selectedFolderId}
+                onUpload={openUploadModal}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-5 py-3">
+                        Tài liệu
+                      </th>
+                      <th className="px-4 py-3">
+                        Thư mục
+                      </th>
+                      <th className="px-4 py-3">
+                        Quyền truy cập
+                      </th>
+                      <th className="px-4 py-3">
+                        Phiên bản
+                      </th>
+                      <th className="px-4 py-3">
+                        Cập nhật
+                      </th>
+                      <th className="px-4 py-3 text-right">
+                        Thao tác
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredDocuments.map(
+                      (doc) => {
+                        const visibility =
+                          String(
+                            doc.visibility || "PUBLIC"
+                          ).toUpperCase();
+
+                        const fileName =
+                          doc.currentFileName ||
+                          doc.name ||
+                          "document";
+
+                        return (
+                          <tr
+                            key={doc.id}
+                            className="group transition hover:bg-slate-50"
+                          >
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                                  {getFileIcon(
+                                    fileName,
+                                    "h-5 w-5"
+                                  )}
+                                </div>
+
+                                <div className="min-w-0">
+                                  <p
+                                    className="truncate font-semibold text-slate-800"
+                                    title={doc.name}
+                                  >
+                                    {doc.name}
+                                  </p>
+
+                                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                                    <span>
+                                      {formatBytes(
+                                        doc.currentFileSize
+                                      )}
+                                    </span>
+
+                                    <span>•</span>
+
+                                    <span>
+                                      {doc.currentContentType ||
+                                        getFileExtension(
+                                          fileName
+                                        ).toUpperCase() ||
+                                        "FILE"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <Folder className="h-4 w-4 text-amber-500" />
+
+                                <span className="max-w-[160px] truncate">
+                                  {doc.folderName ||
+                                    "Kho gốc"}
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openVisibilityModal(
+                                    doc
+                                  )
+                                }
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  visibility ===
+                                  "PUBLIC"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {visibility ===
+                                "PUBLIC" ? (
+                                  <Globe2 className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Lock className="h-3.5 w-3.5" />
+                                )}
+
+                                {visibility ===
+                                "PUBLIC"
+                                  ? "Công khai"
+                                  : "Bảo mật"}
+                              </button>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                <History className="h-3.5 w-3.5" />
+                                v
+                                {doc.currentVersionNumber ||
+                                  1}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-700">
+                                    {formatDate(
+                                      doc.updatedAt
+                                    )}
+                                  </p>
+
+                                  <p className="mt-0.5 truncate text-xs text-slate-400">
+                                    {doc.uploadedByName ||
+                                      "Không xác định"}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDownload(
+                                      doc.currentVersionId,
+                                      fileName
+                                    )
+                                  }
+                                  title="Tải xuống"
+                                  className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-600"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openVersionModal(
+                                      doc
+                                    )
+                                  }
+                                  title="Tạo phiên bản mới"
+                                  className="rounded-lg p-2 text-slate-500 transition hover:bg-violet-50 hover:text-violet-600"
+                                >
+                                  <UploadCloud className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openHistoryModal(
+                                      doc
+                                    )
+                                  }
+                                  title="Lịch sử phiên bản"
+                                  className="rounded-lg p-2 text-slate-500 transition hover:bg-amber-50 hover:text-amber-600"
+                                >
+                                  <History className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openPermissionModal(
+                                      doc
+                                    )
+                                  }
+                                  title="Phân quyền"
+                                  className="rounded-lg p-2 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
+                                >
+                                  <Users className="h-4 w-4" />
+                                </button>
+
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      const menu =
+                                        event.currentTarget
+                                          .nextElementSibling;
+
+                                      document
+                                        .querySelectorAll(
+                                          "[data-document-menu]"
+                                        )
+                                        .forEach(
+                                          (element) => {
+                                            if (
+                                              element !==
+                                              menu
+                                            ) {
+                                              element.classList.add(
+                                                "hidden"
+                                              );
+                                            }
+                                          }
+                                        );
+
+                                      menu.classList.toggle(
+                                        "hidden"
+                                      );
+                                    }}
+                                    title="Thêm"
+                                    className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </button>
+
+                                  <div
+                                    data-document-menu
+                                    className="absolute right-0 top-10 z-20 hidden w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        openRenameModal(
+                                          doc
+                                        );
+                                        document
+                                          .querySelectorAll(
+                                            "[data-document-menu]"
+                                          )
+                                          .forEach(
+                                            (element) =>
+                                              element.classList.add(
+                                                "hidden"
+                                              )
+                                          );
+                                      }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                      Đổi tên
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        openMoveModal(
+                                          doc
+                                        );
+                                        document
+                                          .querySelectorAll(
+                                            "[data-document-menu]"
+                                          )
+                                          .forEach(
+                                            (element) =>
+                                              element.classList.add(
+                                                "hidden"
+                                              )
+                                          );
+                                      }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <Move className="h-4 w-4" />
+                                      Di chuyển
+                                    </button>
+
+                                    <div className="my-1 border-t border-slate-100" />
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleDeleteDocument(
+                                          doc
+                                        );
+                                        document
+                                          .querySelectorAll(
+                                            "[data-document-menu]"
+                                          )
+                                          .forEach(
+                                            (element) =>
+                                              element.classList.add(
+                                                "hidden"
+                                              )
+                                          );
+                                      }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Xóa tài liệu
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+
+      {showUploadModal && (
+        <Modal
+          title="Tải tài liệu lên"
+          onClose={() =>
+            !uploading &&
+            setShowUploadModal(false)
+          }
+        >
+          <form
+            onSubmit={handleUploadSubmit}
+            className="space-y-5 p-6"
+          >
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                File tài liệu
+              </label>
+
+              <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center transition hover:border-blue-400 hover:bg-blue-50/40">
+                <UploadCloud className="h-9 w-9 text-blue-500" />
+
+                <span className="mt-3 text-sm font-semibold text-slate-700">
+                  {uploadFile
+                    ? uploadFile.name
+                    : "Chọn file để tải lên"}
+                </span>
+
+                <span className="mt-1 text-xs text-slate-400">
+                  Hỗ trợ các định dạng file theo cấu hình
+                  Cloudinary/server.
+                </span>
+
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file =
+                      event.target.files?.[0] ||
+                      null;
+
+                    setUploadFile(file);
+
+                    if (
+                      file &&
+                      !docName.trim()
+                    ) {
+                      setDocName(file.name);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Tên tài liệu
+              </label>
+
+              <input
+                value={docName}
+                onChange={(event) =>
+                  setDocName(event.target.value)
+                }
+                placeholder="Ví dụ: Tài liệu yêu cầu hệ thống"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Thư mục
+              </label>
+
+              <select
+                value={uploadFolderId}
+                onChange={(event) =>
+                  setUploadFolderId(
+                    event.target.value
+                  )
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">
+                  Kho gốc
+                </option>
+
+                {renderFolderOptions(
+                  folderTree
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Mô tả
+              </label>
+
+              <textarea
+                value={docDesc}
+                onChange={(event) =>
+                  setDocDesc(event.target.value)
+                }
+                rows={3}
+                placeholder="Mô tả ngắn về tài liệu..."
+                className="w-full resize-none rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() =>
+                  setShowUploadModal(false)
+                }
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+
+              <button
+                type="submit"
+                disabled={uploading}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {uploading && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Tải lên
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showFolderModal && (
+        <Modal
+          title="Tạo thư mục mới"
+          onClose={() =>
+            !creatingFolder &&
+            setShowFolderModal(false)
+          }
+        >
+          <form
+            onSubmit={handleCreateFolder}
+            className="space-y-5 p-6"
+          >
+            <div className="flex items-center gap-3 rounded-xl bg-blue-50 p-4">
+              <FolderPlus className="h-6 w-6 text-blue-600" />
+
+              <div>
+                <p className="text-sm font-semibold text-blue-900">
+                  Tạo cấu trúc thư mục
+                </p>
+
+                <p className="mt-1 text-xs text-blue-700">
+                  Ví dụ: 01_Tài liệu yêu cầu,
+                  02_Thiết kế, 03_Tài liệu kỹ thuật.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Tên thư mục
+              </label>
+
+              <input
+                autoFocus
+                value={folderName}
+                onChange={(event) =>
+                  setFolderName(event.target.value)
+                }
+                placeholder="Ví dụ: 01_Tài liệu yêu cầu"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Thư mục cha
+              </label>
+
+              <select
+                value={folderParentId}
+                onChange={(event) =>
+                  setFolderParentId(
+                    event.target.value
+                  )
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">
+                  Kho gốc
+                </option>
+
+                {renderFolderOptions(
+                  folderTree
+                )}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowFolderModal(false)
+                }
+                disabled={creatingFolder}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+
+              <button
+                type="submit"
+                disabled={creatingFolder}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {creatingFolder && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Tạo thư mục
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showRenameModal && renameDoc && (
+        <Modal
+          title="Đổi tên tài liệu"
+          onClose={() =>
+            !renaming &&
+            setShowRenameModal(false)
+          }
+        >
+          <form
+            onSubmit={handleRename}
+            className="space-y-5 p-6"
+          >
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
+              {getFileIcon(
+                renameDoc.name,
+                "h-6 w-6"
+              )}
+
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-700">
+                  {renameDoc.name}
+                </p>
+
+                <p className="text-xs text-slate-400">
+                  v
+                  {renameDoc.currentVersionNumber ||
+                    1}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Tên mới
+              </label>
+
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(event) =>
+                  setRenameValue(
+                    event.target.value
+                  )
+                }
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowRenameModal(false)
+                }
+                disabled={renaming}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+              >
+                Hủy
+              </button>
+
+              <button
+                type="submit"
+                disabled={renaming}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {renaming && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Lưu thay đổi
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showMoveModal && moveDoc && (
+        <Modal
+          title="Di chuyển tài liệu"
+          onClose={() =>
+            !moving &&
+            setShowMoveModal(false)
+          }
+        >
+          <form
+            onSubmit={handleMoveDocument}
+            className="space-y-5 p-6"
+          >
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
+              <Move className="h-5 w-5 text-blue-600" />
+
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-800">
+                  {moveDoc.name}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Chọn thư mục đích.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Thư mục đích
+              </label>
+
+              <select
+                value={moveFolderId}
+                onChange={(event) =>
+                  setMoveFolderId(
+                    event.target.value
+                  )
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">
+                  Kho gốc
+                </option>
+
+                {renderFolderOptions(
+                  folderTree
+                )}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowMoveModal(false)
+                }
+                disabled={moving}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+              >
+                Hủy
+              </button>
+
+              <button
+                type="submit"
+                disabled={moving}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {moving && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Di chuyển
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showVersionModal && selectedDoc && (
+        <Modal
+          title={`Tạo phiên bản mới — ${selectedDoc.name}`}
+          onClose={() =>
+            !submittingVersion &&
+            setShowVersionModal(false)
+          }
+        >
+          <form
+            onSubmit={handleNewVersionSubmit}
+            className="space-y-5 p-6"
+          >
+            <div className="flex items-center gap-3 rounded-xl bg-blue-50 p-4">
+              <History className="h-6 w-6 text-blue-600" />
+
+              <div>
+                <p className="text-sm font-semibold text-blue-900">
+                  Phiên bản hiện tại: v
+                  {selectedDoc.currentVersionNumber ||
+                    1}
+                </p>
+
+                <p className="mt-1 text-xs text-blue-700">
+                  File mới sẽ trở thành phiên bản hiện
+                  tại.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                File phiên bản mới
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed border-slate-300 p-5 transition hover:border-blue-400 hover:bg-blue-50/30">
+                <UploadCloud className="h-7 w-7 text-blue-600" />
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-700">
+                    {versionFile
+                      ? versionFile.name
+                      : "Chọn file phiên bản mới"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    Chọn file mới để tạo version.
+                  </p>
+                </div>
+
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(event) =>
+                    setVersionFile(
+                      event.target.files?.[0] ||
+                        null
+                    )
+                  }
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Mô tả thay đổi
+              </label>
+
+              <textarea
+                value={changeDesc}
+                onChange={(event) =>
+                  setChangeDesc(
+                    event.target.value
+                  )
+                }
+                rows={4}
+                placeholder="Ví dụ: Cập nhật tài liệu theo góp ý của PM..."
+                className="w-full resize-none rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowVersionModal(false)
+                }
+                disabled={submittingVersion}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700"
+              >
+                Hủy
+              </button>
+
+              <button
+                type="submit"
+                disabled={
+                  submittingVersion ||
+                  !versionFile
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {submittingVersion && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Tạo phiên bản
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showHistoryModal && selectedDoc && (
+        <Modal
+          title={`Lịch sử phiên bản — ${selectedDoc.name}`}
+          onClose={() =>
+            setShowHistoryModal(false)
+          }
+          width="max-w-3xl"
+        >
+          <div className="p-6">
+            <div className="mb-5 flex items-center justify-between rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-3">
+                {getFileIcon(
+                  selectedDoc.currentFileName ||
+                    selectedDoc.name,
+                  "h-7 w-7"
+                )}
+
+                <div>
+                  <p className="font-semibold text-slate-800">
+                    {selectedDoc.name}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Phiên bản hiện tại: v
+                    {selectedDoc.currentVersionNumber ||
+                      1}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openVersionModal(
+                    selectedDoc
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Phiên bản mới
+              </button>
+            </div>
+
+            {loadingVersions ? (
+              <div className="py-16 text-center">
+                <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
+                <p className="mt-2 text-sm text-slate-500">
+                  Đang tải lịch sử...
+                </p>
+              </div>
+            ) : versions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center">
+                <History className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="mt-2 text-sm text-slate-500">
+                  Chưa có lịch sử phiên bản.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {versions.map((version) => {
+                  const isCurrent =
+                    Boolean(version.current);
+
+                  const fileName =
+                    version.fileName ||
+                    selectedDoc.name;
+
+                  return (
+                    <div
+                      key={version.id}
+                      className={`rounded-xl border p-4 transition ${
+                        isCurrent
+                          ? "border-blue-200 bg-blue-50/40"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                            {getFileIcon(
+                              fileName
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-lg bg-slate-900 px-2 py-1 text-xs font-bold text-white">
+                                v
+                                {
+                                  version.versionNumber
+                                }
+                              </span>
+
+                              {isCurrent && (
+                                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                  Hiện tại
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="mt-2 truncate text-sm font-semibold text-slate-800">
+                              {fileName}
+                            </p>
+
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                              <span>
+                                {formatBytes(
+                                  version.fileSize
+                                )}
+                              </span>
+
+                              <span>
+                                {version.editedByName ||
+                                  "Không xác định"}
+                              </span>
+
+                              <span>
+                                {formatDateTime(
+                                  version.createdAt
+                                )}
+                              </span>
+                            </div>
+
+                            {version.changeDescription && (
+                              <p className="mt-2 text-sm text-slate-600">
+                                {
+                                  version.changeDescription
+                                }
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownload(
+                                version.id,
+                                fileName
+                              )
+                            }
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <Download className="h-4 w-4" />
+                            Tải
+                          </button>
+
+                          {!isCurrent && (
+                            <button
+                              type="button"
+                              disabled={
+                                restoringVersionId ===
+                                version.id
+                              }
+                              onClick={() =>
+                                handleRestoreVersion(
+                                  version
+                                )
+                              }
+                              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {restoringVersionId ===
+                              version.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-4 w-4" />
+                              )}
+                              Khôi phục
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {showVisibilityModal && visibilityDoc && (
+        <Modal
+          title="Thiết lập quyền truy cập"
+          onClose={() =>
+            !updatingVisibility &&
+            setShowVisibilityModal(false)
+          }
+        >
+          <div className="space-y-4 p-6">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-3">
+                <Shield className="h-6 w-6 text-blue-600" />
+
+                <div>
+                  <p className="font-semibold text-slate-800">
+                    {visibilityDoc.name}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Chọn phạm vi truy cập cho tài liệu.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={updatingVisibility}
+              onClick={() =>
+                handleChangeVisibility(
+                  "PUBLIC"
+                )
+              }
+              className={`flex w-full items-start gap-4 rounded-2xl border p-4 text-left transition ${
+                String(
+                  visibilityDoc.visibility
+                ).toUpperCase() === "PUBLIC"
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-200 hover:border-emerald-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="rounded-xl bg-emerald-100 p-3">
+                <Globe2 className="h-5 w-5 text-emerald-600" />
+              </div>
+
+              <div className="flex-1">
+                <p className="font-semibold text-slate-800">
+                  Công khai
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Thành viên trong dự án có thể truy cập
+                  tài liệu theo quyền được cấp.
+                </p>
+              </div>
+
+              {String(
+                visibilityDoc.visibility
+              ).toUpperCase() === "PUBLIC" && (
+                <Check className="h-5 w-5 text-emerald-600" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              disabled={updatingVisibility}
+              onClick={() =>
+                handleChangeVisibility(
+                  "PRIVATE"
+                )
+              }
+              className={`flex w-full items-start gap-4 rounded-2xl border p-4 text-left transition ${
+                String(
+                  visibilityDoc.visibility
+                ).toUpperCase() === "PRIVATE"
+                  ? "border-red-300 bg-red-50"
+                  : "border-slate-200 hover:border-red-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="rounded-xl bg-red-100 p-3">
+                <Lock className="h-5 w-5 text-red-600" />
+              </div>
+
+              <div className="flex-1">
+                <p className="font-semibold text-slate-800">
+                  Bảo mật
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Chỉ người có quyền phù hợp mới có thể
+                  truy cập tài liệu.
+                </p>
+              </div>
+
+              {String(
+                visibilityDoc.visibility
+              ).toUpperCase() === "PRIVATE" && (
+                <Check className="h-5 w-5 text-red-600" />
+              )}
+            </button>
+
+            <div className="flex justify-end border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowVisibilityModal(false)
+                }
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showPermissionModal && permissionDoc && (
+        <Modal
+          title={`Phân quyền — ${permissionDoc.name}`}
+          onClose={() =>
+            setShowPermissionModal(false)
+          }
+          width="max-w-3xl"
+        >
+          <div className="p-6">
+            <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <div className="flex items-start gap-3">
+                <Shield className="mt-0.5 h-5 w-5 text-blue-600" />
+
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">
+                    Phân quyền xem và tải
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-blue-700">
+                    Cấp quyền riêng cho từng thành viên
+                    trong dự án. Backend vẫn kiểm tra quyền
+                    ở phía server.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+              <input
+                value={permissionSearch}
+                onChange={(event) =>
+                  setPermissionSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Tìm thành viên..."
+                className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            {loadingPermissions ? (
+              <div className="py-12 text-center">
+                <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
+                <p className="mt-2 text-sm text-slate-500">
+                  Đang tải quyền...
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-3">
+                        Thành viên
+                      </th>
+
+                      <th className="w-28 px-4 py-3 text-center">
+                        Xem
+                      </th>
+
+                      <th className="w-32 px-4 py-3 text-center">
+                        Tải xuống
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredMembers.map(
+                      (member) => {
+                        const viewKey = `${member.id}-VIEW`;
+                        const downloadKey = `${member.id}-DOWNLOAD`;
+
+                        return (
+                          <tr
+                            key={member.id}
+                            className="hover:bg-slate-50"
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+                                  <UserCircle2 className="h-5 w-5 text-slate-500" />
+                                </div>
+
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-800">
+                                    {member.name}
+                                  </p>
+
+                                  <p className="truncate text-xs text-slate-400">
+                                    {member.email}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                disabled={
+                                  savingPermission ===
+                                  viewKey
+                                }
+                                onClick={() =>
+                                  togglePermission(
+                                    member,
+                                    "VIEW"
+                                  )
+                                }
+                                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                                  hasPermission(
+                                    member.id,
+                                    "VIEW"
+                                  )
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                                }`}
+                              >
+                                {savingPermission ===
+                                viewKey ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            </td>
+
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                disabled={
+                                  savingPermission ===
+                                  downloadKey
+                                }
+                                onClick={() =>
+                                  togglePermission(
+                                    member,
+                                    "DOWNLOAD"
+                                  )
+                                }
+                                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                                  hasPermission(
+                                    member.id,
+                                    "DOWNLOAD"
+                                  )
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                                }`}
+                              >
+                                {savingPermission ===
+                                downloadKey ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+
+                {filteredMembers.length === 0 && (
+                  <div className="p-10 text-center">
+                    <Users className="mx-auto h-8 w-8 text-slate-300" />
+                    <p className="mt-2 text-sm text-slate-500">
+                      Không tìm thấy thành viên.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-xs text-slate-400">
+                Quyền hiện có:{" "}
+                {permissions.length}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPermissionModal(false)
+                }
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

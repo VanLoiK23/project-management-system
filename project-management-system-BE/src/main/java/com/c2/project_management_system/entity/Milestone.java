@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
-
 @Entity
 @Table(name = "milestones")
 @Getter
@@ -33,18 +32,19 @@ public class Milestone {
     @Column(nullable = false)
     private LocalDate endDate;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer progressPercent = 0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    // Milestone co the (tuy chon) gan voi nhieu cong viec lien quan;
-    // mot cong viec cung co the thuoc nhieu milestone -> quan he n-n,
-    // phia so huu quan he la Milestone.
     @ManyToMany
     @JoinTable(
-            name = "milestone_tasks",
-            joinColumns = @JoinColumn(name = "milestone_id"),
-            inverseJoinColumns = @JoinColumn(name = "task_id")
+        name = "milestone_tasks",
+        joinColumns = @JoinColumn(name = "milestone_id"),
+        inverseJoinColumns = @JoinColumn(name = "task_id")
     )
     @Builder.Default
     private Set<Task> tasks = new HashSet<>();

@@ -1,29 +1,31 @@
 package com.c2.project_management_system.dto.request;
 
 import java.time.LocalDate;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
 public class MilestoneCreateRequest {
-    @NotNull
-    private Long projectId;
 
-    @NotBlank
+    @NotBlank(message = "Tên Milestone không được để trống")
+    @Size(max = 200, message = "Tên Milestone không được vượt quá 200 ký tự")
     private String name;
 
-    @NotNull
+    @NotNull(message = "Ngày bắt đầu không được để trống")
     private LocalDate startDate;
 
-    @NotNull
+    @NotNull(message = "Ngày kết thúc không được để trống")
     private LocalDate endDate;
 
-    private List<Long> taskIds; // tuỳ chọn
+    @NotNull(message = "Dự án không được để trống")
+    private Long projectId;
+
+    private Set<Long> taskIds = new HashSet<>();
 }

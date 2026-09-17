@@ -6,46 +6,36 @@ import com.c2.project_management_system.dto.request.CommentRequest;
 import com.c2.project_management_system.dto.request.TaskRequest;
 import com.c2.project_management_system.dto.request.UpdateAssigneesRequest;
 import com.c2.project_management_system.dto.respone.TaskCommentResponse;
+import com.c2.project_management_system.dto.respone.TaskPageResponse;
 import com.c2.project_management_system.dto.respone.TaskResponse;
 
 public interface TaskService {
 
-    // Member
-    List<TaskResponse> getTasksForCurrentUser();
+	TaskPageResponse getMyTasks(int page, int size, String keyword, String status, String priority, String sortBy,
+			String direction);
+	
+	List<TaskResponse> getMyTasksFromProject(Long projectId);
 
-    // PM
-    List<TaskResponse> getTasksByProject(Long projectId);
+	List<TaskResponse> getTasksForCurrentUser();
 
-    TaskResponse createTask(
-            Long projectId,
-            TaskRequest request);
+	TaskPageResponse getTasksByProject(Long projectId, int page, int size, String keyword, String status,
+			String priority, Long assigneeId, String sortBy, String direction);
 
-    TaskResponse updateTask(
-            Long taskId,
-            TaskRequest request);
+	TaskResponse createTask(Long projectId, TaskRequest request);
 
-    void deleteTask(Long taskId);
+	TaskResponse updateTask(Long taskId, TaskRequest request);
 
-    // Status
-    TaskResponse updateStatus(
-            Long taskId,
-            String status);
+	void deleteTask(Long taskId);
 
-    // Progress
-    TaskResponse updateProgress(
-            Long taskId,
-            Integer progress);
+	TaskResponse updateStatus(Long taskId, String status);
 
-    // Assignees
-    TaskResponse updateAssignees(
-            Long taskId,
-            UpdateAssigneesRequest request);
+	TaskResponse updateProgress(Long taskId, Integer progress);
 
-    // Comments
-    TaskCommentResponse addComment(
-            Long taskId,
-            CommentRequest request);
+	TaskResponse updateAssignees(Long taskId, UpdateAssigneesRequest request);
+	
+	TaskResponse findTaskById(Long taskId);
 
-    List<TaskCommentResponse> getComments(
-            Long taskId);
+	TaskCommentResponse addComment(Long taskId, CommentRequest request);
+
+	List<TaskCommentResponse> getComments(Long taskId);
 }

@@ -1,6 +1,7 @@
 package com.c2.project_management_system.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -13,10 +14,20 @@ import com.c2.project_management_system.statusEnum.DocumentPermissionType;
 @Repository
 public interface DocumentPermissionRepository extends JpaRepository<DocumentPermission, Long> {
 
-    List<DocumentPermission> findByDocument(Document document);
+	List<DocumentPermission> findByDocument(Document document);
 
-    List<DocumentPermission> findByDocumentAndUser(Document document, User user);
+	List<DocumentPermission> findByDocumentAndUser(Document document, User user);
 
-    boolean existsByDocumentAndUserAndPermissionType(
-            Document document, User user, DocumentPermissionType permissionType);
+	boolean existsByDocumentAndUserAndPermissionType(Document document, User user,
+			DocumentPermissionType permissionType);
+
+	List<DocumentPermission> findByDocumentId(Long documentId);
+
+	Optional<DocumentPermission> findByDocumentIdAndUserIdAndPermissionType(Long documentId, Long userId,
+			DocumentPermissionType permissionType);
+
+	boolean existsByDocumentIdAndUserIdAndPermissionType(Long documentId, Long userId,
+			DocumentPermissionType permissionType);
+
+	void deleteByDocumentIdAndUserId(Long documentId, Long userId);
 }
