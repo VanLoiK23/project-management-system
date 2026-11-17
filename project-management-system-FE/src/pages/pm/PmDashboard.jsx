@@ -79,24 +79,22 @@ const DonutTooltip = ({ active, payload }) => {
   return null;
 };
 
-// Module-level cache so switching tabs does not reload data
-let dashboardCache = null;
-
 export default function PmDashboard() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState(() => dashboardCache?.projects || []);
-  const [notifications, setNotifications] = useState(() => dashboardCache?.notifications || []);
-  const [issues, setIssues] = useState(() => dashboardCache?.issues || []);
-  const [milestones, setMilestones] = useState(() => dashboardCache?.milestones || []);
-  const [projectTasks, setProjectTasks] = useState(() => dashboardCache?.projectTasks || []);
-  const [documents, setDocuments] = useState(() => dashboardCache?.documents || []);
-  const [loading, setLoading] = useState(() => !dashboardCache);
+  const [projects, setProjects] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [issues, setIssues] = useState([]);
+  const [milestones, setMilestones] = useState([]);
+  const [projectTasks, setProjectTasks] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchDashboardData = async (force = false) => {
-    if (!force && dashboardCache) {
-      setLoading(false);
-      return;
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
     }
     try {
       const [projRes, notifRes] = await Promise.all([
@@ -160,15 +158,6 @@ export default function PmDashboard() {
         setProjectTasks(allTasks);
         setDocuments(allDocs);
       }
-
-      dashboardCache = {
-        projects: projectList,
-        notifications: notifList,
-        issues: allIssues,
-        milestones: allMilestones,
-        projectTasks: allTasks,
-        documents: allDocs,
-      };
     } catch (err) {
       console.error("Lỗi khi tải dữ liệu dashboard:", err);
     } finally {
@@ -178,9 +167,7 @@ export default function PmDashboard() {
   };
 
   useEffect(() => {
-    if (!dashboardCache) {
-      fetchDashboardData();
-    }
+    fetchDashboardData();
   }, []);
 
   const handleRefresh = () => {

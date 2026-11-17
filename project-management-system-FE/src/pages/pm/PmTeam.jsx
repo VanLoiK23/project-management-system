@@ -172,27 +172,12 @@ function formatDate(value) {
   return date.toLocaleDateString("vi-VN");
 }
 
-// Memory cache for PMTeam
-let teamCache = {
-  projects: null,
-  selectedProjectId: "",
-  membersByProject: {},
-};
-
 export default function PMTeam() {
-  const [projects, setProjects] = useState(() => teamCache.projects || []);
-  const [selectedProjectId, setSelectedProjectId] = useState(() => 
-    teamCache.selectedProjectId || (teamCache.projects?.[0] ? String(teamCache.projects[0].id) : "")
-  );
-
-  const [members, setMembers] = useState(() =>
-    teamCache.selectedProjectId ? teamCache.membersByProject[teamCache.selectedProjectId] || [] : []
-  );
-
-  const [loadingProjects, setLoadingProjects] = useState(() => !teamCache.projects);
-
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [members, setMembers] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingMembers, setLoadingMembers] = useState(false);
-
   const [refreshing, setRefreshing] = useState(false);
 
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -215,36 +200,6 @@ export default function PMTeam() {
 
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
-  useEffect(() => {
-    if (teamCache.projects && teamCache.projects.length > 0) {
-      setProjects(teamCache.projects);
-      if (!selectedProjectId && teamCache.selectedProjectId) {
-        setSelectedProjectId(teamCache.selectedProjectId);
-      }
-      return;
-    }
-    loadProjects();
-  }, []);
-
-  useEffect(() => {
-    setPage(0);
-  }, [searchKeyword, roleFilter, statusFilter, pageSize]);
-  
-  useEffect(() => {
-    if (!selectedProjectId) {
-      setMembers([]);
-      return;
-    }
-
-    teamCache.selectedProjectId = selectedProjectId;
-  
-    if (!teamCache.membersByProject[selectedProjectId]) {
-      loadMembers(selectedProjectId);
-    } else {
-      setMembers(teamCache.membersByProject[selectedProjectId]);
-    }
-  }, [selectedProjectId, page]);
-
   const loadProjects = async () => {
     try {
       setLoadingProjects(true);
@@ -254,12 +209,10 @@ export default function PMTeam() {
 
       const list = Array.isArray(data) ? data : data?.content ?? [];
 
-      teamCache.projects = list;
       setProjects(list);
 
       if (list.length > 0) {
         const firstId = String(list[0].id);
-        teamCache.selectedProjectId = firstId;
         setSelectedProjectId(firstId);
       }
     } catch (err) {
@@ -289,10 +242,7 @@ export default function PMTeam() {
 
         const list = Array.isArray(data) ? data : data?.content ?? [];
 
-        teamCache.selectedProjectId = projectId;
-        teamCache.membersByProject[projectId] = list;
         setMembers(list);
-        setPage(0);
       } catch (err) {
         setMembers([]);
         setError(
@@ -305,6 +255,23 @@ export default function PMTeam() {
     },
     [page, pageSize, searchKeyword, roleFilter, statusFilter]
   );
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchKeyword, roleFilter, statusFilter, pageSize]);
+  
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setMembers([]);
+      return;
+    }
+
+    loadMembers(selectedProjectId);
+  }, [selectedProjectId, page, searchKeyword, roleFilter, statusFilter, loadMembers]);
 
   const handleRefresh = async () => {
     if (!selectedProjectId) {

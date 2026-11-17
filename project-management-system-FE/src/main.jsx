@@ -27,6 +27,7 @@ import PmDashboard from "./pages/pm/PmDashboard.jsx";
 import PMTeam from "./pages/pm/PmTeam.jsx";
 import ReportsPage from "./pages/pm/ReportsPage.jsx";
 import TasksPage from "./pages/pm/TasksPage.jsx";
+import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import AccountManagement from "./pages/admin/AccountManagement.jsx";
 import AdminProjectManagement from "./pages/admin/AdminProjectManagement.jsx";
 import MemberProjects from "./pages/members/MemberProjects.jsx";
@@ -54,7 +55,7 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <Navigate to="dashboard" replace /> },
-          { path: "dashboard", element: <>{/* <AdminDashboard /> */}</> }, // Tổng quan Hệ thống
+          { path: "dashboard", element: <AdminDashboard /> }, // Tổng quan Hệ thống
           { path: "users", element: <>{<AccountManagement />} </> }, // Quản lý Người dùng
           { path: "projects", element: <>{<AdminProjectManagement />}</> }, // Tất cả Dự án
           { path: "settings", element: <>{/* <AdminSettings /> */}</> }, // Cài đặt Hệ thống

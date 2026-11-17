@@ -1211,15 +1211,12 @@ function ProjectFormModal({
   );
 }
 
-// Memory cache for projects list
-let cachedProjectsList = null;
-
 export default function ProjectDashboard() {
   const navigate = useNavigate();
   const { toasts, push: pushToast, dismiss } = useToasts();
 
-  const [projects, setProjects] = useState(() => cachedProjectsList || []);
-  const [isLoadingList, setIsLoadingList] = useState(() => !cachedProjectsList);
+  const [projects, setProjects] = useState([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [listError, setListError] = useState("");
@@ -1256,11 +1253,6 @@ export default function ProjectDashboard() {
   const menuRef = useRef(null);
 
   const loadProjects = useCallback(async (force = false) => {
-    if (!force && cachedProjectsList) {
-      setIsLoadingList(false);
-      return;
-    }
-
     if (force) {
       setIsRefreshing(true);
     } else {
@@ -1271,7 +1263,6 @@ export default function ProjectDashboard() {
     try {
       const data = await apiFetchProjects();
       const list = Array.isArray(data) ? data : [];
-      cachedProjectsList = list;
       setProjects(list);
     } catch (error) {
       const message = getErrorMessage(error, "Không tải được danh sách dự án");
@@ -1286,9 +1277,7 @@ export default function ProjectDashboard() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (!cachedProjectsList) {
-      loadProjects();
-    }
+    loadProjects();
   }, [loadProjects]);
 
   useEffect(() => {
@@ -1717,7 +1706,7 @@ export default function ProjectDashboard() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-h-[380px] pb-28">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
@@ -1796,7 +1785,7 @@ export default function ProjectDashboard() {
                   </td>
                 </tr>
               ) : (
-                filteredProjects.map((project) => {
+                filteredProjects.map((project, index) => {
                   const membersList = Array.isArray(project.members)
                     ? project.members
                     : [];
@@ -1916,7 +1905,11 @@ export default function ProjectDashboard() {
                         {activeMenuId === project.id && (
                           <div
                             ref={menuRef}
-                            className="absolute right-8 top-10 z-40 w-56 rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+                            className={`absolute right-8 z-50 w-56 rounded-xl border border-slate-200 bg-white p-1 shadow-2xl ${
+                              filteredProjects.length >= 3 && index >= filteredProjects.length - 2
+                                ? "bottom-10"
+                                : "top-10"
+                            }`}
                           >
                             {/* DETAIL */}
                             <button
