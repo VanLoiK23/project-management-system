@@ -56,6 +56,7 @@ const apiUpdateUserPermissions = (id, payload) =>
   axios.put(`/users/${id}/permissions`, payload).then((res) => res.data);
 
 const ROLE_LABEL = {
+  ADMIN: "Quản trị viên",
   PM: "Quản lý dự án",
   MEMBER: "Thành viên",
 };
@@ -72,6 +73,7 @@ const ROLE_BADGE = {
 };
 
 const ROLE_OPTIONS = [
+  { value: "ADMIN", label: "Quản trị viên" },
   { value: "PM", label: "Quản lý dự án" },
   { value: "MEMBER", label: "Thành viên" },
 ];
@@ -350,6 +352,10 @@ export default function AccountManagement() {
 
     try {
       await apiUpdateUser(selectedUser.id, form);
+
+      if (form.role && form.role !== selectedUser.role) {
+        await apiUpdateUserRole(selectedUser.id, { role: form.role });
+      }
 
       setShowEditModal(false);
       setSelectedUser(null);
@@ -1092,12 +1098,6 @@ function UserRow({
               icon={<Pencil size={16} />}
               label="Chỉnh sửa"
               onClick={() => onEdit(user)}
-            />
-
-            <ActionMenuItem
-              icon={<ShieldCheck size={16} />}
-              label="Phân quyền"
-              onClick={() => onPermission(user)}
             />
 
             <ActionMenuItem

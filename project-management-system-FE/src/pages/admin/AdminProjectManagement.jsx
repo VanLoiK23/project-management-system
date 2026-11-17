@@ -298,7 +298,7 @@ export default function AdminProjectManagement() {
     };
 
     getAllPMs();
-  }, showFilters);
+  }, [showFilters]);
 
   const stats = useMemo(() => {
     return {
