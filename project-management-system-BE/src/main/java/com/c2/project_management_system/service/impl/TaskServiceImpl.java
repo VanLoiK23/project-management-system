@@ -36,12 +36,15 @@ import com.c2.project_management_system.repository.TaskCommentRepository;
 import com.c2.project_management_system.repository.TaskRepository;
 import com.c2.project_management_system.repository.UserRepository;
 import com.c2.project_management_system.service.MilestoneService;
+import com.c2.project_management_system.service.NotificationService;
 import com.c2.project_management_system.service.TaskService;
 import com.c2.project_management_system.statusEnum.TaskPriority;
 import com.c2.project_management_system.statusEnum.TaskStatus;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -53,6 +56,7 @@ public class TaskServiceImpl implements TaskService {
 	private final ProjectMemberRepository projectMemberRepository;
 	private final TaskCommentRepository taskCommentRepository;
 	private final MilestoneService milestoneService;
+	private final NotificationService notificationService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -347,9 +351,23 @@ public class TaskServiceImpl implements TaskService {
 			throw new IllegalArgumentException("Một hoặc nhiều người thực hiện không tồn tại");
 		}
 
+		Set<Long> existingAssigneeIds = task.getAssignees().stream().map(User::getId).collect(Collectors.toSet());
 		task.setAssignees(new HashSet<>(users));
 
 		Task savedTask = taskRepository.save(task);
+
+		for (User user : users) {
+			if (!existingAssigneeIds.contains(user.getId()) && !user.getId().equals(currentUser.getId())) {
+				notificationService.sendNotificationToUser(
+						user.getId(),
+						currentUser.getId(),
+						"Phân công công việc mới",
+						String.format("%s đã phân công cho bạn công việc: \"%s\" trong dự án \"%s\"",
+								currentUser.getFullName(), task.getTitle(), task.getProject().getName()),
+						com.c2.project_management_system.statusEnum.NotificationTargetType.INDIVIDUAL
+				);
+			}
+		}
 
 		return toTaskResponse(savedTask);
 	}
@@ -373,9 +391,68 @@ public class TaskServiceImpl implements TaskService {
 
 		TaskComment savedComment = taskCommentRepository.save(comment);
 
+		// Gửi thông báo cho thành viên được @tag trong bình luận
+		notifyTaggedUsers(task.getProject(), task.getTitle(), "công việc", currentUser, request.getContent(), request.getTaggedUserIds());
+
 		return TaskCommentResponse.builder().id(savedComment.getId()).content(savedComment.getContent())
 				.userId(currentUser.getId()).userName(currentUser.getFullName()).createdAt(savedComment.getCreatedAt())
 				.build();
+	}
+
+	private void notifyTaggedUsers(Project project, String itemName, String itemType, User currentUser, String content, List<Long> taggedUserIds) {
+		try {
+			Set<User> targets = new HashSet<>();
+
+			if (taggedUserIds != null && !taggedUserIds.isEmpty()) {
+				for (Long uid : taggedUserIds) {
+					if (!uid.equals(currentUser.getId())) {
+						userRepository.findById(uid).ifPresent(targets::add);
+					}
+				}
+			}
+
+			if (project != null && content != null && content.contains("@")) {
+				String lowerContent = content.toLowerCase();
+				List<com.c2.project_management_system.entity.ProjectMember> members = projectMemberRepository.findByProject(project);
+				for (com.c2.project_management_system.entity.ProjectMember pm : members) {
+					User u = pm.getUser();
+					if (u != null && !u.getId().equals(currentUser.getId())) {
+						if (lowerContent.contains("@" + u.getFullName().toLowerCase()) ||
+								lowerContent.contains("@" + u.getEmail().toLowerCase())) {
+							targets.add(u);
+						}
+					}
+				}
+				if (project.getProjectManager() != null && !project.getProjectManager().getId().equals(currentUser.getId())) {
+					User pm = project.getProjectManager();
+					if (lowerContent.contains("@" + pm.getFullName().toLowerCase()) ||
+							lowerContent.contains("@" + pm.getEmail().toLowerCase())) {
+						targets.add(pm);
+					}
+				}
+			}
+
+			String preview = content.trim();
+			if (preview.length() > 80) {
+				preview = preview.substring(0, 80) + "...";
+			}
+
+			for (User target : targets) {
+				String title = "Bạn được nhắc đến trong bình luận";
+				String notifContent = String.format("%s đã nhắc đến bạn trong %s \"%s\": \"%s\"",
+						currentUser.getFullName(), itemType, itemName, preview);
+
+				notificationService.sendNotificationToUser(
+						target.getId(),
+						currentUser.getId(),
+						title,
+						notifContent,
+						com.c2.project_management_system.statusEnum.NotificationTargetType.INDIVIDUAL
+				);
+			}
+		} catch (Exception e) {
+			log.warn("Lỗi khi gửi thông báo tag thành viên trong comment: {}", e.getMessage());
+		}
 	}
 
 	@Override

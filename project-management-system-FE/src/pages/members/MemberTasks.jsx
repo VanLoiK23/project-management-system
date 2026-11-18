@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
+import MentionCommentInput, { renderCommentText } from "../../components/MentionCommentInput";
 
 const STATUS = {
   NOT_STARTED: "NOT_STARTED",
@@ -82,8 +83,10 @@ const apiUpdateTaskProgress = (taskId, payload) =>
 const apiFetchTaskComments = (taskId) =>
   axios.get(`/tasks/${taskId}/comments`).then((res) => res.data);
 
-const apiAddTaskComment = (taskId, content) =>
-  axios.post(`/tasks/${taskId}/comments`, { content }).then((res) => res.data);
+const apiAddTaskComment = (taskId, payload) => {
+  const body = typeof payload === "string" ? { content: payload } : payload;
+  return axios.post(`/tasks/${taskId}/comments`, body).then((res) => res.data);
+};
 
 function getTasksFromResponse(data) {
   if (Array.isArray(data)) {
@@ -580,6 +583,41 @@ function TaskDetailModal({ task, onClose, onUpdated, showToast }) {
     }
   };
 
+  const handleSendMentionComment = async ({ content, taggedUserIds }) => {
+    if (!content || sendingComment) {
+      return;
+    }
+
+    try {
+      setSendingComment(true);
+
+      const createdComment = await apiAddTaskComment(taskId, {
+        content,
+        taggedUserIds,
+      });
+
+      if (createdComment) {
+        setComments((prev) => [
+          ...prev,
+          createdComment.data || createdComment,
+        ]);
+      } else {
+        await loadComments();
+      }
+
+      showToast("success", "Đã thêm bình luận.");
+    } catch (error) {
+      console.error("ADD COMMENT ERROR:", error);
+
+      showToast(
+        "error",
+        error?.response?.data?.message || "Không thể thêm bình luận."
+      );
+    } finally {
+      setSendingComment(false);
+    }
+  };
+
   const handleSendComment = async (event) => {
     event.preventDefault();
 
@@ -842,47 +880,23 @@ function TaskDetailModal({ task, onClose, onUpdated, showToast }) {
                             <span>{formatDateTime(getCommentDate(item))}</span>
                           </div>
 
-                          <p>{getCommentContent(item)}</p>
+                          <div className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                            {renderCommentText(getCommentContent(item))}
+                          </div>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
 
-                <form
-                  className="member-comment-form"
-                  onSubmit={handleSendComment}
-                >
-                  <textarea
-                    value={comment}
-                    onChange={(event) => setComment(event.target.value)}
-                    placeholder="Nhập ghi chú hoặc bình luận..."
-                    rows={3}
-                    maxLength={2000}
+                <div className="mt-4">
+                  <MentionCommentInput
+                    projectId={detail?.projectId}
+                    onSubmit={handleSendMentionComment}
+                    submitting={sendingComment}
+                    placeholder="Nhập ghi chú hoặc bình luận (gõ @ để nhắc thành viên)..."
                   />
-
-                  <div className="member-comment-form-bottom">
-                    <span>{comment.length}/2000</span>
-
-                    <button
-                      type="submit"
-                      className="member-primary-button"
-                      disabled={!comment.trim() || sendingComment}
-                    >
-                      {sendingComment ? (
-                        <>
-                          <Loader2 size={17} className="spin" />
-                          Đang gửi...
-                        </>
-                      ) : (
-                        <>
-                          <Send size={17} />
-                          Gửi bình luận
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
+                </div>
               </section>
             </>
           )}

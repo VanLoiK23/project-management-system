@@ -24,6 +24,7 @@ import {
   Eye,
 } from "lucide-react";
 import axios from "../../utils/axios.customize";
+import MentionCommentInput, { renderCommentText } from "../../components/MentionCommentInput";
 
 const PAGE_SIZE = 10;
 
@@ -130,10 +131,10 @@ const apiUpdateStatus = (issueId, status) =>
 const apiFetchComments = (issueId) =>
   axios.get(`/issues/${issueId}/comments`).then((res) => res.data);
 
-const apiAddComment = (issueId, content) =>
-  axios
-    .post(`/issues/${issueId}/comments`, { content })
-    .then((res) => res.data);
+const apiAddComment = (issueId, payload) => {
+  const body = typeof payload === "string" ? { content: payload } : payload;
+  return axios.post(`/issues/${issueId}/comments`, body).then((res) => res.data);
+};
 
 function formatDate(value) {
   if (!value) return "—";
@@ -461,7 +462,7 @@ export default function MemberIssues() {
 
   const canUpdateStatus = (issue) => {
     if (!issue) return false;
-
+    if (typeof issue.canUpdateStatus === "boolean") return issue.canUpdateStatus;
     return issue.status === STATUS.NEW || issue.status === STATUS.IN_PROGRESS;
   };
 
@@ -516,6 +517,30 @@ export default function MemberIssues() {
     } catch (err) {
       setError(
         err.response?.data?.message || err.message || "Không tải được bình luận"
+      );
+    } finally {
+      setCommentLoading(false);
+    }
+  };
+
+  const submitMentionComment = async ({ content, taggedUserIds }) => {
+    if (!activeIssue || !content) {
+      return;
+    }
+
+    setCommentLoading(true);
+    setError("");
+
+    try {
+      await apiAddComment(activeIssue.id, { content, taggedUserIds });
+
+      const data = await apiFetchComments(activeIssue.id);
+
+      setComments(Array.isArray(data) ? data : data?.data || []);
+      setSuccess("Đã thêm bình luận");
+    } catch (err) {
+      setError(
+        err.response?.data?.message || err.message || "Không thể gửi bình luận"
       );
     } finally {
       setCommentLoading(false);
@@ -1321,41 +1346,23 @@ export default function MemberIssues() {
                         )}
                       </div>
 
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-700">
-                        {comment.content}
-                      </p>
+                      <div className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-700">
+                        {renderCommentText(comment.content)}
+                      </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
-            <form
-              onSubmit={submitComment}
-              className="mt-4 flex gap-2 border-t border-slate-100 pt-4"
-            >
-              <input
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                maxLength={2000}
-                placeholder="Viết bình luận..."
-                disabled={commentLoading}
-                className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20"
+            <div className="mt-4 pt-2 border-t border-slate-100">
+              <MentionCommentInput
+                projectId={activeIssue?.projectId || selectedProject?.id}
+                onSubmit={submitMentionComment}
+                submitting={commentLoading}
+                placeholder="Viết bình luận (gõ @ để nhắc thành viên)..."
               />
-
-              <button
-                type="submit"
-                disabled={commentLoading || !newComment.trim()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-navy-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {commentLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                Gửi
-              </button>
-            </form>
+            </div>
           </div>
         </Modal>
       )}

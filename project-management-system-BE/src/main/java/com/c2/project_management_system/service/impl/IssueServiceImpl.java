@@ -34,10 +34,12 @@ import com.c2.project_management_system.exception.ResourceNotFoundException;
 import com.c2.project_management_system.repository.IssueAttachmentRepository;
 import com.c2.project_management_system.repository.IssueCommentRepository;
 import com.c2.project_management_system.repository.IssueRepository;
+import com.c2.project_management_system.repository.ProjectMemberRepository;
 import com.c2.project_management_system.repository.ProjectRepository;
 import com.c2.project_management_system.repository.UserRepository;
 import com.c2.project_management_system.service.FileStorageService;
 import com.c2.project_management_system.service.IssueService;
+import com.c2.project_management_system.service.NotificationService;
 import com.c2.project_management_system.statusEnum.IssueSeverity;
 import com.c2.project_management_system.statusEnum.IssueStatus;
 import com.c2.project_management_system.statusEnum.ProjectStatus;
@@ -56,6 +58,8 @@ public class IssueServiceImpl implements IssueService {
 	private final UserRepository userRepository;
 	private final IssueAttachmentRepository issueAttachmentRepository;
 	private final FileStorageService fileStorageService;
+	private final ProjectMemberRepository projectMemberRepository;
+	private final NotificationService notificationService;
 
 	@Override
 	@Transactional
@@ -102,7 +106,22 @@ public class IssueServiceImpl implements IssueService {
 			issue.setStatus(IssueStatus.IN_PROGRESS);
 		}
 
-		return toResponse(issueRepository.save(issue));
+		Issue savedIssue = issueRepository.save(issue);
+
+		if (!assignee.getId().equals(currentUserId)) {
+			User current = userRepository.findById(currentUserId).orElse(null);
+			String senderName = current != null ? current.getFullName() : "Quản lý dự án";
+			notificationService.sendNotificationToUser(
+					assignee.getId(),
+					currentUserId,
+					"Phân công xử lý sự cố",
+					String.format("%s đã phân công cho bạn xử lý sự cố \"%s\" trong dự án \"%s\"",
+							senderName, issue.getTitle(), issue.getProject().getName()),
+					com.c2.project_management_system.statusEnum.NotificationTargetType.INDIVIDUAL
+			);
+		}
+
+		return toResponse(savedIssue);
 	}
 
 	@Override
@@ -149,7 +168,66 @@ public class IssueServiceImpl implements IssueService {
 
 		IssueComment saved = issueCommentRepository.save(comment);
 
+		// Gửi thông báo cho thành viên được @tag trong bình luận
+		notifyTaggedUsers(issue.getProject(), issue.getTitle(), "sự cố", author, request.getContent(), request.getTaggedUserIds());
+
 		return toCommentResponse(saved);
+	}
+
+	private void notifyTaggedUsers(Project project, String itemName, String itemType, User currentUser, String content, java.util.List<Long> taggedUserIds) {
+		try {
+			java.util.Set<User> targets = new java.util.HashSet<>();
+
+			if (taggedUserIds != null && !taggedUserIds.isEmpty()) {
+				for (Long uid : taggedUserIds) {
+					if (!uid.equals(currentUser.getId())) {
+						userRepository.findById(uid).ifPresent(targets::add);
+					}
+				}
+			}
+
+			if (project != null && content != null && content.contains("@")) {
+				String lowerContent = content.toLowerCase();
+				java.util.List<com.c2.project_management_system.entity.ProjectMember> members = projectMemberRepository.findByProject(project);
+				for (com.c2.project_management_system.entity.ProjectMember pm : members) {
+					User u = pm.getUser();
+					if (u != null && !u.getId().equals(currentUser.getId())) {
+						if (lowerContent.contains("@" + u.getFullName().toLowerCase()) ||
+								lowerContent.contains("@" + u.getEmail().toLowerCase())) {
+							targets.add(u);
+						}
+					}
+				}
+				if (project.getProjectManager() != null && !project.getProjectManager().getId().equals(currentUser.getId())) {
+					User pm = project.getProjectManager();
+					if (lowerContent.contains("@" + pm.getFullName().toLowerCase()) ||
+							lowerContent.contains("@" + pm.getEmail().toLowerCase())) {
+						targets.add(pm);
+					}
+				}
+			}
+
+			String preview = content.trim();
+			if (preview.length() > 80) {
+				preview = preview.substring(0, 80) + "...";
+			}
+
+			for (User target : targets) {
+				String title = "Bạn được nhắc đến trong bình luận";
+				String notifContent = String.format("%s đã nhắc đến bạn trong %s \"%s\": \"%s\"",
+						currentUser.getFullName(), itemType, itemName, preview);
+
+				notificationService.sendNotificationToUser(
+						target.getId(),
+						currentUser.getId(),
+						title,
+						notifContent,
+						com.c2.project_management_system.statusEnum.NotificationTargetType.INDIVIDUAL
+				);
+			}
+		} catch (Exception e) {
+			log.warn("Lỗi khi gửi thông báo tag thành viên trong issue comment: {}", e.getMessage());
+		}
 	}
 
 	@Override

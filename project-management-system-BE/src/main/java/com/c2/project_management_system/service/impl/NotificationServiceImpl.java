@@ -183,6 +183,66 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+    @Override
+    @Transactional
+    public void sendNotificationToUser(Long recipientUserId, Long senderId, String title, String content, NotificationTargetType targetType) {
+        if (recipientUserId == null) return;
+        sendNotificationToUsers(Set.of(recipientUserId), senderId, title, content, targetType != null ? targetType : NotificationTargetType.INDIVIDUAL);
+    }
+
+    @Override
+    @Transactional
+    public void sendNotificationToUsers(Set<Long> recipientUserIds, Long senderId, String title, String content, NotificationTargetType targetType) {
+        if (recipientUserIds == null || recipientUserIds.isEmpty()) return;
+
+        try {
+            User sender = null;
+            if (senderId != null) {
+                sender = userRepository.findById(senderId).orElse(null);
+            }
+            if (sender == null) {
+                sender = userRepository.findAll().stream()
+                        .filter(u -> u.getRole() == com.c2.project_management_system.statusEnum.AccountRole.ADMIN)
+                        .findFirst()
+                        .orElse(null);
+            }
+            if (sender == null && !recipientUserIds.isEmpty()) {
+                sender = userRepository.findById(recipientUserIds.iterator().next()).orElse(null);
+            }
+            if (sender == null) return;
+
+            Notification notification = Notification.builder()
+                    .title(title)
+                    .content(content)
+                    .targetType(targetType != null ? targetType : NotificationTargetType.INDIVIDUAL)
+                    .createdBy(sender)
+                    .hidden(false)
+                    .build();
+
+            Notification savedNotification = notificationRepository.save(notification);
+
+            List<NotificationRecipient> recipients = new ArrayList<>();
+            for (Long uid : recipientUserIds) {
+                User u = userRepository.findById(uid).orElse(null);
+                if (u != null) {
+                    NotificationRecipient nr = NotificationRecipient.builder()
+                            .notification(savedNotification)
+                            .user(u)
+                            .isRead(false)
+                            .build();
+                    recipients.add(nr);
+                }
+            }
+
+            if (!recipients.isEmpty()) {
+                recipientRepository.saveAll(recipients);
+                log.info("Đã gửi thông báo '{}' tới {} người dùng", title, recipients.size());
+            }
+        } catch (Exception e) {
+            log.warn("Lỗi khi gửi thông báo tới người dùng: {}", e.getMessage());
+        }
+    }
+
     private NotificationResponse mapToResponse(NotificationRecipient r) {
         Notification n = r.getNotification();
         return NotificationResponse.builder()

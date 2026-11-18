@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bell, CheckCheck, Clock, ExternalLink } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  Clock,
+  AlertTriangle,
+  AtSign,
+  RefreshCw,
+  UserCheck,
+} from "lucide-react";
 import axios from "../utils/axios.customize";
 
 export default function NotificationDropdown() {
@@ -7,6 +15,7 @@ export default function NotificationDropdown() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const dropdownRef = useRef(null);
 
   const fetchUnreadCount = useCallback(() => {
@@ -26,6 +35,20 @@ export default function NotificationDropdown() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleScanDeadlines = async (e) => {
+    e?.stopPropagation();
+    setScanning(true);
+    try {
+      await axios.post("/notifications/check-deadlines");
+      fetchNotifications();
+      fetchUnreadCount();
+    } catch (err) {
+      console.error("Lỗi quét deadline:", err);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   useEffect(() => {
     fetchUnreadCount();
@@ -89,12 +112,49 @@ export default function NotificationDropdown() {
     }
   };
 
+  const getNotificationIcon = (title = "") => {
+    const lower = title.toLowerCase();
+    if (lower.includes("quá hạn")) {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+          <AlertTriangle className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    if (lower.includes("hạn chót") || lower.includes("đến hạn")) {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+          <Clock className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    if (lower.includes("nhắc đến") || lower.includes("bình luận")) {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+          <AtSign className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    if (lower.includes("phân công")) {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+          <UserCheck className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    return (
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+        <Bell className="h-3.5 w-3.5" />
+      </div>
+    );
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-navy-500/20"
+        className="relative flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none"
         aria-label="Thông báo"
       >
         <Bell className="h-5 w-5" />
@@ -117,16 +177,33 @@ export default function NotificationDropdown() {
                 </span>
               )}
             </div>
-            {unreadCount > 0 && (
+
+            <div className="flex items-center gap-2">
+              {/* Nút quét deadline nhanh */}
               <button
                 type="button"
-                onClick={handleMarkAllAsRead}
-                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                onClick={handleScanDeadlines}
+                disabled={scanning}
+                title="Quét và kiểm tra deadline công việc"
+                className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-50"
               >
-                <CheckCheck className="h-3.5 w-3.5" />
-                Đã đọc tất cả
+                <RefreshCw
+                  className={`h-3 w-3 ${scanning ? "animate-spin text-blue-600" : ""}`}
+                />
+                <span>{scanning ? "Đang quét..." : "Quét deadline"}</span>
               </button>
-            )}
+
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllAsRead}
+                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Đã đọc
+                </button>
+              )}
+            </div>
           </div>
 
           {/* List */}
@@ -145,37 +222,41 @@ export default function NotificationDropdown() {
                 <div
                   key={n.id}
                   onClick={() => !n.isRead && handleMarkAsRead(n.id)}
-                  className={`group relative flex flex-col gap-1 p-3.5 transition-colors cursor-pointer hover:bg-slate-50 ${
+                  className={`group relative flex items-start gap-3 p-3.5 transition-colors cursor-pointer hover:bg-slate-50 ${
                     !n.isRead ? "bg-blue-50/40" : "bg-white"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <h4
-                      className={`text-xs leading-snug ${
-                        !n.isRead
-                          ? "font-semibold text-slate-900"
-                          : "font-medium text-slate-700"
-                      }`}
-                    >
-                      {n.title}
-                    </h4>
-                    {!n.isRead && (
-                      <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-600" />
-                    )}
-                  </div>
+                  {getNotificationIcon(n.title)}
 
-                  <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                    {n.content}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-1">
+                      <h4
+                        className={`text-xs leading-snug ${
+                          !n.isRead
+                            ? "font-semibold text-slate-900"
+                            : "font-medium text-slate-700"
+                        }`}
+                      >
+                        {n.title}
+                      </h4>
+                      {!n.isRead && (
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                      )}
+                    </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatTime(n.createdAt)}
-                    </span>
-                    {n.createdByName && (
-                      <span className="text-slate-500">{n.createdByName}</span>
-                    )}
+                    <p className="mt-0.5 text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                      {n.content}
+                    </p>
+
+                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatTime(n.createdAt)}
+                      </span>
+                      {n.createdByName && (
+                        <span className="text-slate-500 font-medium">{n.createdByName}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
