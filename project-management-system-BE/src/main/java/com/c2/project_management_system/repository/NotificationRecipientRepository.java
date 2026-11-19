@@ -19,4 +19,13 @@ public interface NotificationRecipientRepository extends JpaRepository<Notificat
     long countByUserAndIsReadFalse(User user);
 
     List<NotificationRecipient> findByNotification(Notification notification);
+
+    @org.springframework.data.jpa.repository.Query("SELECT COUNT(nr) > 0 FROM NotificationRecipient nr " +
+            "WHERE nr.user.id = :userId " +
+            "AND nr.notification.content LIKE CONCAT('%', :keyword, '%') " +
+            "AND nr.notification.createdAt >= :since")
+    boolean existsRecentNotification(
+            @org.springframework.data.repository.query.Param("userId") Long userId,
+            @org.springframework.data.repository.query.Param("keyword") String keyword,
+            @org.springframework.data.repository.query.Param("since") java.time.LocalDateTime since);
 }

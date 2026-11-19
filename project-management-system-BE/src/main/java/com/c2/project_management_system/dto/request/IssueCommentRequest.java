@@ -11,4 +11,5 @@ import lombok.Setter;
 public class IssueCommentRequest {
     @NotBlank
     private String content;
+    private java.util.List<Long> taggedUserIds;
 }

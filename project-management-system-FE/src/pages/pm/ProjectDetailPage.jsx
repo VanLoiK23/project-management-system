@@ -85,7 +85,10 @@ export default function ProjectDetailPage({ isPm = true }) {
 
       try {
         const taskRes = await axios.get(`/projects/${projectId}/tasks`);
-        const taskData = taskRes.data?.data ?? taskRes.data;
+        const taskData =
+          taskRes.data?.content ??
+          taskRes.data?.data ??
+          (Array.isArray(taskRes.data) ? taskRes.data : []);
         setTasks(Array.isArray(taskData) ? taskData : []);
       } catch (e) {
         console.warn("Could not load tasks:", e);
@@ -93,7 +96,11 @@ export default function ProjectDetailPage({ isPm = true }) {
 
       try {
         const issueRes = await axios.get(`/issues/project/${projectId}`);
-        setIssues(Array.isArray(issueRes.data) ? issueRes.data : []);
+        const issueData =
+          issueRes.data?.content ??
+          issueRes.data?.data ??
+          (Array.isArray(issueRes.data) ? issueRes.data : []);
+        setIssues(Array.isArray(issueData) ? issueData : []);
       } catch (e) {
         console.warn("Could not load issues:", e);
       }

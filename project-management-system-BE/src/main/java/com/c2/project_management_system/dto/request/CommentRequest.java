@@ -12,4 +12,5 @@ import lombok.Setter;
 public class CommentRequest {
 
     private String content;
+    private java.util.List<Long> taggedUserIds;
 }

@@ -15,4 +15,6 @@ public interface NotificationService {
     NotificationSettingResponse getSettings(Long userId);
     NotificationSettingResponse updateSettings(Long userId, NotificationSettingRequest request);
     void sendNotificationToProject(Long projectId, Long senderId, String title, String content, NotificationTargetType targetType);
+    void sendNotificationToUser(Long recipientUserId, Long senderId, String title, String content, NotificationTargetType targetType);
+    void sendNotificationToUsers(java.util.Set<Long> recipientUserIds, Long senderId, String title, String content, NotificationTargetType targetType);
 }
